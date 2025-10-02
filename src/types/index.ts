@@ -37,6 +37,19 @@ export interface FileAttachment {
   content: string | Buffer;
   mimeType?: string;
   size?: number;
+  tempPath?: string;
+}
+
+export interface AttachmentSource {
+  type: 'paste' | 'drag' | 'upload' | 'file';
+  originalPath?: string;
+  timestamp: Date;
+}
+
+export interface ManagedAttachment extends FileAttachment {
+  id: string;
+  source: AttachmentSource;
+  isTempFile: boolean;
 }
 
 export interface ChatMessage {

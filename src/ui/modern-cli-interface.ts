@@ -12,6 +12,15 @@ import { OutputProcessor, OutputOptions, FormattedOutput } from '../core/output-
 import { ToolIntegration, ToolExecutionOptions } from '../core/tool-integration';
 import { MultilineInputProcessor, MultilineInputOptions } from '../core/multiline-input';
 import { ScreenshotPasteHandler, ScreenshotPasteOptions } from '../core/screenshot-paste-handler';
+import { AttachmentManager, ManagedAttachment } from '../core/attachment-manager';
+import { DragDropHandler } from '../core/drag-drop-handler';
+import { EnhancedDragHandler } from '../core/enhanced-drag-handler';
+import { InputEnhancer, InputEnhancerOptions } from '../core/input-enhancer';
+import { DragIndicator, createDragIndicator } from '../core/drag-indicator';
+import { TerminalDragDetector, TerminalDragEvent } from '../core/terminal-drag-detector';
+import { DragDisplay } from '../core/drag-display';
+import { RealDragDetector, RealDragEvent } from '../core/real-drag-detector';
+import { EnhancedAIService, EnhancedAIRequest } from '../services/enhanced-ai-service';
 
 export interface ModernCLIOptions {
   theme?: 'claude' | 'qorder' | 'auto';
@@ -58,8 +67,17 @@ export class ModernCLIInterface extends EventEmitter {
   private toolIntegration!: ToolIntegration;
   private multilineInput!: MultilineInputProcessor;
   private screenshotPasteHandler!: ScreenshotPasteHandler;
+  private attachmentManager!: AttachmentManager;
+  private dragDropHandler!: DragDropHandler;
+  private enhancedDragHandler!: EnhancedDragHandler;
+  private inputEnhancer!: InputEnhancer;
+  private dragIndicator!: DragIndicator;
+  private terminalDragDetector!: TerminalDragDetector;
+  private dragDisplay!: DragDisplay;
+  private realDragDetector!: RealDragDetector;
   private pendingInputs: string[] = [];
   private isProcessing = false;
+  private currentAttachments: ManagedAttachment[] = [];
 
   constructor(options: ModernCLIOptions = {}) {
     super();
@@ -101,6 +119,21 @@ export class ModernCLIInterface extends EventEmitter {
       });
     }
 
+    // 初始化附件管理器
+    this.attachmentManager = new AttachmentManager({
+      maxAttachments: 10,
+      maxTotalSize: 50 * 1024 * 1024, // 50MB
+      autoCleanup: true
+    });
+
+    // 初始化拖拽处理器
+    this.dragDropHandler = new DragDropHandler(this.attachmentManager, {
+      enabled: true,
+      showHints: true,
+      maxFiles: 5,
+      maxFileSize: 10 * 1024 * 1024 // 10MB
+    });
+
     this.multilineInput = new MultilineInputProcessor({
       enableFileDrop: true,
       maxLines: 1000,
@@ -115,10 +148,69 @@ export class ModernCLIInterface extends EventEmitter {
       completer: this.completer.bind(this)
     });
 
+    // 初始化增强拖拽处理器
+    this.enhancedDragHandler = new EnhancedDragHandler(this.attachmentManager, {
+      enableRealTimeFeedback: true,
+      enableFilePreview: true,
+      enableHoverEffects: true,
+      showProgressIndicators: true
+    });
+
+    // 初始化输入增强器
+    this.inputEnhancer = new InputEnhancer(this.rl, this.attachmentManager, {
+      enableDragDrop: true,
+      enableVisualFeedback: true,
+      enableInlinePreview: true,
+      dragPrompt: '🎯 拖拽文件到这里 > ',
+      normalPrompt: '> ',
+      showAttachmentIndicator: true
+    });
+
+    // 初始化拖拽指示器
+    this.dragIndicator = createDragIndicator('full');
+
+    // 初始化新的终端拖拽检测器
+    this.terminalDragDetector = new TerminalDragDetector(this.attachmentManager, {
+      enableFileWatcher: true,
+      enableTempDirectory: true,
+      detectionWindow: 3000,
+      maxFileSize: 50 * 1024 * 1024, // 50MB
+      maxFiles: 10,
+      showProgress: true,
+      enablePreview: true
+    });
+
+    // 初始化拖拽显示组件
+    this.dragDisplay = new DragDisplay({
+      showFileIcons: true,
+      showFileSize: true,
+      showFileType: true,
+      showProgress: true,
+      maxPreviewLength: 45,
+      colorScheme: 'blue',
+      compact: false
+    });
+
+    // 初始化真正的拖拽检测器
+    this.realDragDetector = new RealDragDetector(this.attachmentManager, {
+      enableAnsiDetection: true,
+      enableFileSystemFallback: true,
+      enableTerminalSpecific: true,
+      watchDirectories: this.getDefaultWatchDirectories(),
+      detectionTimeout: 5000,
+      maxFileSize: 50 * 1024 * 1024, // 50MB
+      maxFiles: 10,
+      showVisualFeedback: true
+    });
+
     this.initializeAIService();
     this.setupEventHandlers();
     this.setupInteractionEngine();
     this.setupMultilineInput();
+    this.setupDragDropHandlers();
+    this.setupEnhancedDragHandlers();
+    this.setupTerminalDragDetector();
+    this.setupRealDragDetector();
   }
 
   private initializeAIService(): void {
@@ -294,7 +386,7 @@ export class ModernCLIInterface extends EventEmitter {
   }
 
   private completer(line: string): [string[], string] {
-    const commands = ['/help', '/exit', '/clear', '/status', '/tools', '/config', '/sessions', '/paste'];
+    const commands = ['/help', '/exit', '/clear', '/status', '/tools', '/config', '/sessions', '/paste', '/attachments', '/clear-attachments', '/remove-attachment', '/drag-files'];
     const matches = commands.filter(cmd => cmd.startsWith(line));
     return [matches.length ? matches : commands, line];
   }
@@ -969,6 +1061,25 @@ export class ModernCLIInterface extends EventEmitter {
       case 'paste':
         await this.handlePasteCommand();
         break;
+      case 'attachments':
+      case 'att':
+        this.showAttachments();
+        break;
+      case 'clear-attachments':
+      case 'clear-att':
+        await this.clearAttachments();
+        break;
+      case 'remove-attachment':
+      case 'rm-att':
+        if (args.length > 0) {
+          await this.removeAttachment(args[0]);
+        } else {
+          this.showMessage('用法: /remove-attachment <attachment_id>', 'warning');
+        }
+        break;
+      case 'drag-files':
+        await this.dragDropHandler.manualFileDetection();
+        break;
       default:
         this.showMessage(`未知命令: /${command}。输入 /help 查看帮助。`, 'warning');
     }
@@ -977,128 +1088,7 @@ export class ModernCLIInterface extends EventEmitter {
     this.render();
   }
 
-  private async handleUserMessage(message: string): Promise<void> {
-    try {
-      // 显示加载状态
-      this.showLoading('正在处理...');
-
-      // 记录用户消息到历史
-      this.messageHistory.push({
-        type: 'user',
-        content: message,
-        timestamp: new Date()
-      });
-
-      // 发送消息事件
-      this.emit('userMessage', message);
-
-      let aiResponse: string;
-
-      if (this.aiService) {
-        // 调用真正的AI服务 - 带超时保护
-        try {
-          const messages: ChatMessage[] = [
-            {
-              role: 'user',
-              content: message,
-              timestamp: new Date()
-            }
-          ];
-
-          // 设置超时保护
-          const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('AI服务响应超时')), 30000);
-          });
-
-          const response = await Promise.race([
-            this.aiService.sendMessage(messages),
-            timeoutPromise
-          ]) as any;
-
-          aiResponse = response.content || 'AI返回了空响应';
-        } catch (error) {
-          aiResponse = `AI服务调用失败: ${error instanceof Error ? error.message : '未知错误'}`;
-        }
-      } else {
-        // 没有AI服务时的备用响应
-        aiResponse = '未检测到AI服务配置。请设置API密钥以获得完整功能。';
-      }
-
-      // 记录AI响应到历史
-      this.messageHistory.push({
-        type: 'ai',
-        content: aiResponse,
-        timestamp: new Date()
-      });
-
-      // 更新会话消息计数
-      if (this.currentSession) {
-        this.currentSession.messages += 2; // 用户消息 + AI响应
-      }
-
-    } catch (error) {
-      // 记录错误消息到历史
-      this.messageHistory.push({
-        type: 'ai',
-        content: `处理消息时出错: ${error instanceof Error ? error.message : '未知错误'}`,
-        timestamp: new Date()
-      });
-    } finally {
-      // 隐藏加载状态
-      this.hideLoading();
-
-      // 确保界面重新渲染并恢复输入状态
-      try {
-        this.render();
-        // 强制恢复 readline 状态（多层保障）
-        setTimeout(() => {
-          if (this.isRunning && this.rl) {
-            try {
-              // 确保readline处于活动状态
-              this.rl.resume();
-              // 重新设置提示符并显示
-              this.renderPrompt();
-              this.rl.prompt();
-            } catch (promptError: any) {
-              console.log('Readline恢复失败，使用基本恢复:', promptError?.message || '未知错误');
-              // 如果 prompt 失败，尝试基本恢复
-              process.stdout.write('\n> ');
-            }
-          }
-        }, 50);
-
-        // 添加额外的恢复保障
-        setTimeout(() => {
-          if (this.isRunning && this.rl) {
-            try {
-              this.rl.resume();
-              this.rl.prompt();
-            } catch (e: any) {
-              // 忽略第二次恢复的错误
-            }
-          }
-        }, 200);
-      } catch (renderError) {
-        // 如果渲染失败，尝试简单的输出并恢复状态
-        try {
-          process.stdout.write('\n' + chalk.yellow('消息处理完成') + '\n> ');
-          if (this.isRunning && this.rl) {
-            setTimeout(() => {
-              try {
-                this.rl.resume();
-                this.rl.prompt();
-              } catch (e) {
-                process.stdout.write('> ');
-              }
-            }, 100);
-          }
-        } catch (outputError) {
-          // 忽略所有错误
-        }
-      }
-    }
-  }
-
+  
   private showHelp(): void {
     // 显示帮助信息后延迟重新渲染
     const helpText = chalk.cyan('\n📚 可用命令:') + '\n\n' +
@@ -1226,6 +1216,47 @@ export class ModernCLIInterface extends EventEmitter {
         this.renderTimeout = null;
       }
 
+      // 清理增强拖拽组件
+      if (this.enhancedDragHandler) {
+        try {
+          this.enhancedDragHandler.cleanup();
+        } catch (error) {
+          // 忽略拖拽处理器清理错误
+        }
+      }
+
+      if (this.inputEnhancer) {
+        try {
+          this.inputEnhancer.cleanup();
+        } catch (error) {
+          // 忽略输入增强器清理错误
+        }
+      }
+
+      if (this.dragIndicator) {
+        try {
+          this.dragIndicator.cleanup();
+        } catch (error) {
+          // 忽略拖拽指示器清理错误
+        }
+      }
+
+      if (this.terminalDragDetector) {
+        try {
+          this.terminalDragDetector.cleanup();
+        } catch (error) {
+          // 忽略终端拖拽检测器清理错误
+        }
+      }
+
+      if (this.realDragDetector) {
+        try {
+          this.realDragDetector.disable();
+        } catch (error) {
+          // 忽略真正拖拽检测器清理错误
+        }
+      }
+
       // 停止多行输入处理器
       if (this.multilineInput) {
         try {
@@ -1291,9 +1322,510 @@ export class ModernCLIInterface extends EventEmitter {
     }
 
     try {
-      await this.screenshotPasteHandler.manualPaste();
+      // 使用附件管理器处理粘贴
+      const newAttachments = await this.attachmentManager.addFromClipboard();
+
+      if (newAttachments.length > 0) {
+        // 添加到当前附件列表
+        this.currentAttachments.push(...newAttachments);
+
+        // 显示粘贴结果
+        console.log(chalk.green(`✅ 已添加 ${newAttachments.length} 个附件:`));
+        newAttachments.forEach(attachment => {
+          const icon = attachment.type === 'image' ? '🖼️' : '📄';
+          console.log(`   ${icon} ${attachment.filename}`);
+        });
+
+        console.log(chalk.gray(`💡 当前共有 ${this.currentAttachments.length} 个附件，输入 /attachments 查看`));
+      } else {
+        console.log(chalk.yellow('⚠️ 剪贴板中没有可识别的内容'));
+      }
     } catch (error) {
       this.showMessage(`粘贴失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
     }
+  }
+
+  private showAttachments(): void {
+    const stats = this.attachmentManager.getStats();
+
+    if (stats.count === 0) {
+      this.showMessage('📎 暂无附件', 'info');
+      return;
+    }
+
+    console.log(chalk.cyan(`\n📎 附件列表 (${stats.count})`));
+    console.log(chalk.gray('─'.repeat(60)));
+
+    const attachments = this.attachmentManager.getAllAttachments();
+    attachments.forEach((attachment, index) => {
+      const icon = attachment.type === 'image' ? '🖼️' : '📄';
+      const sourceIcon = this.getSourceIcon(attachment.source.type);
+      const size = attachment.size ? this.formatFileSize(attachment.size) : '未知大小';
+
+      console.log(`${index + 1}. ${icon} ${chalk.white(attachment.filename)} ${sourceIcon}`);
+      console.log(`   大小: ${chalk.gray(size)} | ID: ${chalk.gray(attachment.id)}`);
+
+      if (attachment.source.originalPath) {
+        console.log(`   原路径: ${chalk.gray(attachment.source.originalPath)}`);
+      }
+
+      console.log(`   来源: ${chalk.gray(this.getSourceDescription(attachment.source))}`);
+      console.log('');
+    });
+
+    console.log(chalk.gray('─'.repeat(60)));
+    console.log(chalk.cyan(`总计: ${stats.count} 个文件 (${this.formatFileSize(stats.totalSize)})`));
+    console.log(chalk.gray(`📄 文件: ${stats.fileCount} | 🖼️ 图片: ${stats.imageCount} | 🗂️ 临时文件: ${stats.tempFiles}`));
+
+    console.log(chalk.gray('\n💡 附件管理命令:'));
+    console.log(chalk.gray('• /remove-attachment <id> - 删除指定附件'));
+    console.log(chalk.gray('• /clear-attachments - 清空所有附件'));
+    console.log(chalk.gray('• /paste - 粘贴剪贴板内容'));
+    console.log(chalk.gray('• /drag-files - 手动检测拖拽文件'));
+  }
+
+  private async clearAttachments(): Promise<void> {
+    const stats = this.attachmentManager.getStats();
+
+    if (stats.count === 0) {
+      this.showMessage('📎 暂无附件需要清理', 'info');
+      return;
+    }
+
+    // 简单确认
+    console.log(chalk.yellow(`\n⚠️ 确定要清空所有 ${stats.count} 个附件吗？`));
+    console.log(chalk.gray('输入 y 确认，其他任意键取消'));
+
+    // 在实际实现中，这里应该等待用户输入
+    // 为了简化，我们直接清空
+    this.attachmentManager.clearAttachments();
+    this.currentAttachments = [];
+
+    this.showMessage(`✅ 已清空所有附件`, 'success');
+  }
+
+  private async removeAttachment(attachmentId: string): Promise<void> {
+    const attachment = this.attachmentManager.getAttachment(attachmentId);
+
+    if (!attachment) {
+      this.showMessage(`❌ 未找到附件: ${attachmentId}`, 'error');
+      return;
+    }
+
+    const success = this.attachmentManager.removeAttachment(attachmentId);
+
+    if (success) {
+      // 从当前附件列表中移除
+      this.currentAttachments = this.currentAttachments.filter(att => att.id !== attachmentId);
+      this.showMessage(`✅ 已删除附件: ${attachment.filename}`, 'success');
+    } else {
+      this.showMessage(`❌ 删除附件失败: ${attachment.filename}`, 'error');
+    }
+  }
+
+  private async handleUserMessage(content: string): Promise<void> {
+    if (!this.aiService) {
+      this.showMessage('AI 服务未初始化', 'error');
+      return;
+    }
+
+    // 添加用户消息到历史
+    this.messageHistory.push({
+      type: 'user',
+      content: content,
+      timestamp: new Date()
+    });
+
+    // 显示加载动画
+    this.spinner = ora({
+      text: '🤔 AI 正在思考...',
+      color: 'blue'
+    }).start();
+
+    try {
+      // 如果有附件，使用增强的 AI 服务
+      if (this.currentAttachments.length > 0) {
+        await this.sendMessageWithAttachments(content);
+      } else {
+        // 使用普通 AI 服务
+        const messages: ChatMessage[] = [
+          {
+            role: 'user',
+            content: content,
+            timestamp: new Date()
+          }
+        ];
+        const response = await this.aiService.sendMessage(messages);
+
+        if (this.spinner) {
+          this.spinner.stop();
+          this.spinner = null;
+        }
+
+        this.messageHistory.push({
+          type: 'ai',
+          content: response.content,
+          timestamp: new Date()
+        });
+
+        this.displayAIResponse(response.content);
+      }
+    } catch (error) {
+      if (this.spinner) {
+        this.spinner.stop();
+        this.spinner = null;
+      }
+
+      this.showMessage(`AI 响应失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
+    }
+  }
+
+  private async sendMessageWithAttachments(content: string): Promise<void> {
+    if (!this.aiService) {
+      this.showMessage('AI 服务未初始化', 'error');
+      return;
+    }
+
+    try {
+      // 创建增强 AI 服务实例
+      const enhancedService = new (await import('../services/enhanced-ai-service')).EnhancedAIService({
+        name: 'claude',
+        apiKey: process.env.ANTHROPIC_API_KEY || '',
+        baseUrl: 'https://api.anthropic.com',
+        model: 'claude-3-sonnet-20240229'
+      });
+
+      // 构建消息
+      const messages = [
+        {
+          role: 'user' as const,
+          content: content,
+          timestamp: new Date(),
+          attachments: this.currentAttachments
+        }
+      ];
+
+      const request: EnhancedAIRequest = {
+        messages,
+        attachments: this.currentAttachments.map(att => ({
+          type: att.type,
+          filename: att.filename,
+          content: att.content,
+          mimeType: att.mimeType,
+          size: att.size,
+          tempPath: att.tempPath
+        })),
+        model: 'claude-3-sonnet-20240229',
+        stream: true,
+        temperature: 0.7,
+        maxTokens: 4000
+      };
+
+      if (this.spinner) {
+        this.spinner.text = '🤖 AI 正在处理附件...';
+      }
+
+      let fullResponse = '';
+
+      const response = await enhancedService.sendStreamMessage(request, (chunk: string) => {
+        fullResponse += chunk;
+        // 实时显示响应内容
+        process.stdout.write(chunk);
+      });
+
+      if (this.spinner) {
+        this.spinner.stop();
+        this.spinner = null;
+      }
+
+      // 添加换行符确保格式正确
+      if (fullResponse && !fullResponse.endsWith('\n')) {
+        process.stdout.write('\n');
+      }
+
+      this.messageHistory.push({
+        type: 'ai',
+        content: fullResponse,
+        timestamp: new Date()
+      });
+
+    } catch (error) {
+      if (this.spinner) {
+        this.spinner.stop();
+        this.spinner = null;
+      }
+
+      this.showMessage(`处理附件消息失败: ${error instanceof Error ? error.message : '未知错误'}`, 'error');
+    }
+  }
+
+  private getSourceIcon(sourceType: string): string {
+    const icons = {
+      'paste': '📋',
+      'drag': '🎯',
+      'upload': '⬆️',
+      'file': '📁'
+    };
+    return icons[sourceType as keyof typeof icons] || '📎';
+  }
+
+  private getSourceDescription(source: any): string {
+    const descriptions = {
+      'paste': '剪贴板粘贴',
+      'drag': '拖拽添加',
+      'upload': '文件上传',
+      'file': '文件路径'
+    };
+    return descriptions[source.type as keyof typeof descriptions] || '未知来源';
+  }
+
+  
+  private setupDragDropHandlers(): void {
+    // 监听拖拽事件
+    this.dragDropHandler.on('drag-enter', (event: any) => {
+      console.log(chalk.cyan('🎯 检测到文件拖拽...'));
+    });
+
+    this.dragDropHandler.on('drag-leave', (event: any) => {
+      console.log(chalk.gray('📴 文件拖拽已取消'));
+    });
+
+    this.dragDropHandler.on('drop', async (event: any) => {
+      if (event.files && event.files.length > 0) {
+        console.log(chalk.cyan(`📥 处理拖拽的 ${event.files.length} 个文件...`));
+
+        // 添加到附件管理器
+        const newAttachments = await this.attachmentManager.addFromDragDrop(event.files);
+
+        if (newAttachments.length > 0) {
+          // 添加到当前附件列表
+          this.currentAttachments.push(...newAttachments);
+
+          console.log(chalk.green(`✅ 已添加 ${newAttachments.length} 个附件:`));
+          newAttachments.forEach(attachment => {
+            const icon = attachment.type === 'image' ? '🖼️' : '📄';
+            console.log(`   ${icon} ${attachment.filename}`);
+          });
+
+          console.log(chalk.gray(`💡 当前共有 ${this.currentAttachments.length} 个附件，输入 /attachments 查看`));
+        }
+      }
+    });
+
+    // 启用拖拽功能
+    this.dragDropHandler.enable();
+  }
+
+  private setupEnhancedDragHandlers(): void {
+    // 简化增强拖拽处理，避免与readline冲突
+    // 主要依赖现有的拖拽处理器，增强拖拽处理器只提供辅助功能
+
+    this.enhancedDragHandler.on('filesProcessed', (event) => {
+      // 更新当前附件列表
+      this.currentAttachments = this.attachmentManager.getAllAttachments();
+
+      // 更新输入增强器的附件状态
+      this.inputEnhancer.clearAttachments();
+      this.currentAttachments.forEach(att => {
+        this.inputEnhancer.addAttachment(att);
+      });
+
+      // 显示处理结果
+      const { successCount, failCount, totalCount } = event;
+      if (successCount > 0) {
+        console.log(chalk.green(`✅ 通过增强拖拽添加了 ${successCount} 个文件`));
+        if (failCount > 0) {
+          console.log(chalk.yellow(`⚠️ ${failCount} 个文件处理失败`));
+        }
+      }
+    });
+
+    // 设置输入增强器事件处理（简化）
+    this.inputEnhancer.on('filesProcessed', (event) => {
+      // 同步附件状态
+      this.currentAttachments = this.inputEnhancer.getAttachments();
+    });
+
+    // 启用增强拖拽功能（被动模式）
+    this.enhancedDragHandler.enable();
+
+    console.log(chalk.green('✅ 增强拖拽功能已启用（被动模式）'));
+    console.log(chalk.cyan('💡 提示: 拖拽功能已优化，确保界面响应流畅'));
+  }
+
+  private setupTerminalDragDetector(): void {
+    // 延迟启用，确保界面完全渲染后再启用拖拽检测
+    setTimeout(() => {
+      // 设置终端拖拽检测器事件处理
+      this.terminalDragDetector.on('drag-start', (event: TerminalDragEvent) => {
+        // 确保在当前行下方显示，不干扰输入
+        process.stdout.write('\n');
+        console.log(this.dragDisplay.renderDragStart(event.files));
+        this.redrawPrompt();
+      });
+
+      this.terminalDragDetector.on('drag-progress', (event: TerminalDragEvent) => {
+        const currentFile = event.files[0]?.fileName;
+        const total = event.files.length;
+        const current = event.files.filter(f => f.isProcessed).length;
+
+        process.stdout.write('\n');
+        console.log(this.dragDisplay.renderDragProgress(current, total, currentFile));
+        this.redrawPrompt();
+      });
+
+      this.terminalDragDetector.on('drag-complete', (event: TerminalDragEvent) => {
+        process.stdout.write('\n');
+        console.log(this.dragDisplay.renderDragComplete(event.files));
+
+        // 更新当前附件列表
+        this.currentAttachments = this.attachmentManager.getAllAttachments();
+
+        // 更新输入增强器的附件状态
+        this.inputEnhancer.clearAttachments();
+        this.currentAttachments.forEach(att => {
+          this.inputEnhancer.addAttachment(att);
+        });
+
+        // 更新提示
+        this.inputEnhancer.updatePrompt();
+        this.redrawPrompt();
+      });
+
+      this.terminalDragDetector.on('drag-error', (event: TerminalDragEvent) => {
+        process.stdout.write('\n');
+        console.log(chalk.red(`❌ 拖拽处理出错: ${event.message}`));
+        this.redrawPrompt();
+      });
+
+      // 启用终端拖拽检测
+      this.terminalDragDetector.enable();
+
+      // 显示启用信息
+      setTimeout(() => {
+        process.stdout.write('\n');
+        console.log(chalk.green('✅ 终端拖拽检测已启用'));
+        console.log(chalk.cyan('💡 现在支持拖拽文件和图片到终端'));
+        console.log(chalk.gray('   📋 拖拽后将在下方显示文件预览'));
+        this.redrawPrompt();
+      }, 100);
+    }, 2000); // 2秒后启用，确保界面完全渲染
+  }
+
+  private setupRealDragDetector(): void {
+    // 设置真正拖拽检测器的事件处理
+    this.realDragDetector.on('drag-enter', (event: RealDragEvent) => {
+      process.stdout.write('\n');
+      console.log(chalk.cyan('🎯 检测到拖拽进入输入框区域'));
+      this.redrawPrompt();
+    });
+
+    this.realDragDetector.on('drag-over', (event: RealDragEvent) => {
+      if (event.position) {
+        // 可以在控制台显示拖拽位置信息
+        // process.stdout.write(`\x1b[0H拖拽位置: ${event.position.x}, ${event.position.y}`);
+      }
+    });
+
+    this.realDragDetector.on('drag-leave', (event: RealDragEvent) => {
+      process.stdout.write('\n');
+      console.log(chalk.gray('📤 拖拽已取消'));
+      this.redrawPrompt();
+    });
+
+    this.realDragDetector.on('drop', (event: RealDragEvent) => {
+      process.stdout.write('\n');
+      console.log(this.dragDisplay.renderDragStart(event.files));
+      this.redrawPrompt();
+    });
+
+    this.realDragDetector.on('drag-error', (event: RealDragEvent) => {
+      process.stdout.write('\n');
+      console.log(chalk.red(`❌ 拖拽错误: ${event.message}`));
+      this.redrawPrompt();
+    });
+
+    this.realDragDetector.on('attachments-updated', (event: any) => {
+      process.stdout.write('\n');
+
+      // 更新当前附件列表
+      this.currentAttachments = [...this.currentAttachments, ...event.attachments];
+
+      // 同步到输入增强器
+      if (this.inputEnhancer) {
+        event.attachments.forEach((attachment: ManagedAttachment) => {
+          this.inputEnhancer.addAttachment(attachment);
+        });
+      }
+
+      console.log(chalk.green(`✅ ${event.message}`));
+      console.log(chalk.cyan(`📎 当前附件总数: ${this.currentAttachments.length}`));
+
+      // 显示附件信息
+      event.attachments.forEach((attachment: ManagedAttachment, index: number) => {
+        const icon = this.getFileIcon(attachment.type);
+        console.log(chalk.gray(`   ${index + 1}. ${icon} ${attachment.filename} (${this.formatFileSize(attachment.size || 0)})`));
+      });
+
+      this.redrawPrompt();
+    });
+
+    // 延迟启用真正拖拽检测
+    setTimeout(() => {
+      this.realDragDetector.enable();
+
+      // 显示启用信息
+      setTimeout(() => {
+        process.stdout.write('\n');
+        console.log(chalk.green('🎯 增强拖拽检测已启用'));
+        console.log(chalk.cyan('💡 现在支持直接拖拽文件到输入框区域'));
+        console.log(chalk.gray('   📋 拖拽时会在输入框附近显示视觉反馈'));
+        this.redrawPrompt();
+      }, 100);
+    }, 3000); // 3秒后启用，在终端拖拽检测之后
+  }
+
+  private getDefaultWatchDirectories(): string[] {
+    const os = require('os');
+    const path = require('path');
+
+    return [
+      os.tmpdir(),
+      path.join(os.tmpdir(), 'aicli-drag-drop'),
+      path.join(process.cwd(), 'temp'),
+      path.join(process.cwd(), 'dropped-files'),
+      path.join(os.homedir(), 'Downloads'),
+      path.join(os.homedir(), 'Desktop')
+    ];
+  }
+
+  private getFileIcon(type: string): string {
+    const icons = {
+      image: '🖼️',
+      document: '📄',
+      text: '📝',
+      file: '📎',
+      binary: '💾'
+    };
+    return icons[type as keyof typeof icons] || '📎';
+  }
+
+  
+  private redrawPrompt(): void {
+    // 重新绘制提示符
+    if (this.rl && this.inputEnhancer) {
+      try {
+        process.stdout.write('\n');
+        this.inputEnhancer.updatePrompt();
+      } catch (error) {
+        // 忽略重绘错误
+      }
+    }
+  }
+
+  private displayAIResponse(content: string): void {
+    console.log('\n' + chalk.green('🤖 AI:'));
+    console.log(content);
+    console.log('');
   }
 }

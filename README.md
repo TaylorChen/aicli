@@ -4,384 +4,322 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen)
 
-一个完全参考 Claude Code CLI 设计的增强版 AI 编程助手终端工具，提供 Claude 风格的现代化交互体验，支持截图粘贴等创新功能。
+An enhanced AI programming assistant terminal tool with modern interactive experience, supporting screenshot paste and drag-drop functionality.
 
-## ✨ 增强特性
+## ✨ Features
 
-### 🎯 Claude Code CLI 风格体验
-- 🔄 **流式响应**: 实时显示 AI 回复内容，支持中断
-- 📊 **状态栏**: 实时显示模型状态、token 使用情况、响应时间
-- 🏗️ **项目感知**: 自动检测项目类型和上下文
-- ⚡ **高性能**: 优化的响应速度和内存管理，防抖动渲染
-- 🎨 **现代化界面**: 彩色渐变、动画效果、智能提示
-- 📸 **截图粘贴**: 支持直接粘贴截图到输入框
+### 🎯 Modern Interface Experience
+- 🔄 **Streaming Responses**: Real-time display of AI replies with interrupt support
+- 📊 **Status Bar**: Live display of model status, token usage, response time
+- 🏗️ **Project Awareness**: Automatic project type and context detection
+- ⚡ **High Performance**: Optimized response speed and memory management with anti-flicker rendering
+- 🎨 **Modern UI**: Colorful gradients, animations, and smart prompts
+- 📸 **Screenshot Paste**: Support for pasting screenshots directly into the input field
+- 🎯 **File Drag & Drop**: Support for dragging files into the terminal window
+- 📎 **Attachment Management**: Complete attachment management system supporting multiple file types
 
-### 🚀 核心功能
-- 🤖 **多模型支持**: Claude、DeepSeek、Kimi、OpenAI、Gemini、Grok 等
-- ⚡ **增强斜杠命令**: 丰富的文件操作和项目管理命令
-- 🔄 **多窗口支持**: 支持同时打开多个终端窗口
-- 📝 **会话管理**: 持久化对话历史，支持导入导出
-- 🛠️ **文件操作**: 内置文件浏览、搜索、编辑功能
-- 🔧 **智能配置**: 环境变量自动检测和配置管理
-- 📊 **统计面板**: 使用统计和性能监控
-- 📋 **智能粘贴**: 自动识别剪贴板内容类型（图片、文件、文本）
+### 🚀 Core Features
+- 🤖 **Multi-Model Support**: DeepSeek, OpenAI, and other AI providers
+- ⚡ **Enhanced Slash Commands**: Rich file operations and project management commands
+- 📝 **Session Management**: Persistent conversation history with import/export support
+- 🛠️ **File Operations**: Built-in file browsing, searching, and editing
+- 🔧 **Smart Configuration**: Automatic environment variable detection and configuration management
+- 📊 **Statistics Panel**: Usage statistics and performance monitoring
+- 📋 **Smart Paste**: Automatic detection of clipboard content types (images, files, text)
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 安装
+### Installation
 
 ```bash
 npm install -g aicli
 ```
 
-### 配置 API Key
+### Configure API Key
 
-设置环境变量来配置你的 API Key：
+Set environment variables to configure your API Key:
 
 ```bash
-# Claude (Anthropic)
-export ANTHROPIC_API_KEY=your_api_key_here
-
 # DeepSeek
 export DEEPSEEK_API_KEY=your_api_key_here
-
-# Kimi (Moonshot)
-export MOONSHOT_API_KEY=your_api_key_here
 
 # OpenAI
 export OPENAI_API_KEY=your_api_key_here
 
-# Gemini
-export GOOGLE_API_KEY=your_api_key_here
-
-# Grok
-export GROK_API_KEY=your_api_key_here
+# Add other providers as needed
 ```
 
-### 启动
+### Getting Started
 
 ```bash
-# 启动现代化界面（推荐，支持截图粘贴）
-aicli modern
+# Start the enhanced interface (recommended)
+npm start
 
-# 启动标准界面
-aicli start
-
-# 或者简单启动
+# Or use the global command
 aicli
 ```
 
-## 📖 使用指南
+## 📖 Usage Guide
 
-### 基础使用
+### Basic Usage
 
-启动现代化界面后，你可以：
+After starting the enhanced interface, you can:
 
-1. **直接输入消息**开始与 AI 对话
-2. **输入斜杠命令**执行快捷操作
-3. **使用快捷键**控制界面
-4. **粘贴截图**使用 `/paste` 命令直接粘贴剪贴板中的截图或文件
+1. **Direct Input Messages** to start AI conversations
+2. **Enter Slash Commands** to perform quick operations
+3. **Use Shortcuts** to control the interface
+4. **Paste Screenshots** using the `/paste` command to paste screenshots or files from clipboard
 
-#### 📸 截图粘贴功能（推荐）
+#### 📸 Screenshot Paste Feature (Highlight)
 
-这是 AICLI 2.1+ 的核心创新功能：
+This is the core innovative feature of AICLI 2.1+:
 
 ```bash
-# 方法1：使用 /paste 命令（推荐）
+# Use the /paste command (recommended)
 /paste
-
-# 方法2：在某些终端中也可以尝试 Ctrl+V
 ```
 
-支持的内容类型：
-- 📸 **截图/图片**: PNG、JPEG、GIF、WebP、BMP 格式，自动生成 `@image(filename)` 语法
-- 📄 **文件**: 任何文件类型，自动读取内容并生成 `@file(filename)` 语法
-- 📝 **文本**: 直接插入到输入框
-- 📎 **多文件**: 同时粘贴多个文件，为每个生成引用语法
+Supported content types:
+- 📸 **Screenshots/Images**: PNG, JPEG, GIF, WebP, BMP formats
+- 📄 **Files**: Any file type, automatically reads content
+- 📝 **Text**: Direct insertion into input field
+- 📎 **Multiple Files**: Simultaneously paste multiple files
 
-**使用步骤**：
-1. 截取屏幕截图（Cmd+Shift+4/5 或 PrtScn）
-2. 在 AICLI 界面中输入 `/paste`
-3. 按回车执行
-4. 系统自动处理并插入对应的引用语法
+**Usage Steps**:
+1. Take a screenshot (Cmd+Shift+4/5 or PrtScn)
+2. Type `/paste` in the AICLI interface
+3. Press Enter to execute
+4. System automatically processes and adds to attachment list
 
-### 增强斜杠命令
+**File Drag & Drop**:
+1. Directly drag files into the terminal window
+2. System automatically recognizes and adds them to the attachment list
+3. Type `/attachments` to view added attachments
 
-#### 基础命令
-| 命令 | 别名 | 描述 |
-|------|------|------|
-| `/help` | `/h` | 显示帮助信息 |
-| `/paste` | - | 粘贴剪贴板内容（支持截图、文件、文本） |
-| `/provider` | `/p` | 切换 AI 提供商 |
-| `/model` | `/m` | 切换模型 |
-| `/status` | `/s` | 显示当前状态 |
-| `/clear` | `/c` | 清屏 |
-| `/exit` | `/quit`, `/q` | 退出程序 |
-| `/config` | `/cfg` | 显示配置信息 |
+### Slash Commands
 
-#### 文件操作命令
-| 命令 | 别名 | 描述 |
-|------|------|------|
-| `/ls` | `/list`, `/dir` | 列出文件 |
-| `/cat` | `/read`, `/view` | 查看文件内容 |
-| `/tree` | `/files` | 显示文件树 |
-| `/search` | `/find`, `/grep` | 搜索文件内容 |
-| `/edit` | `/write`, `/modify` | 编辑文件 |
+#### Basic Commands
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `/help` | `/h` | Display help information |
+| `/paste` | `/p` | Paste clipboard content (supports screenshots, files, text) |
+| `/attachments` | `/att` | View current attachment list |
+| `/clear` | `/c` | Clear all attachments |
+| `/remove` | `/rm <n>` | Remove specified attachment by number |
+| `/upload` | `/up [path]` | Upload file or view status |
+| `/status` | `/st` | Display current status |
+| `/quit` | `/q`, `/exit` | Exit program |
 
-#### 项目管理命令
-| 命令 | 别名 | 描述 |
-|------|------|------|
-| `/project` | `/proj`, `/context` | 显示项目信息 |
-| `/session` | `/sess`, `/history` | 会话管理 |
+#### File Operations
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `/ls` | `/list`, `/dir` | List files |
+| `/cat` | `/read`, `/view` | View file content |
+| `/tree` | `/files` | Display file tree |
+| `/search` | `/find`, `/grep` | Search file content |
 
-#### 增强快捷键
-- `Ctrl+C` - 退出程序 / 中断流式响应
-- `Ctrl+L` - 清屏
-- `↑/↓` - 历史记录导航
-- `Tab` - 自动补全命令
-- `/paste` - 智能粘贴剪贴板内容（截图、文件、文本）
+#### Enhanced Shortcuts
+- `Ctrl+C` - Exit program / Interrupt streaming response
+- `Ctrl+V` - Paste clipboard content
+- `↑/↓` - History navigation
+- `Tab` - Command auto-completion
 
-### 快捷键
-
-- `Ctrl+C` - 退出程序
-- `Ctrl+L` - 清屏
-- `↑/↓` - 历史记录导航
-
-### 增强命令行模式
+### Command Line Options
 
 ```bash
-# 启动现代化界面（推荐，支持截图粘贴）
-aicli modern
+# Start with specific provider
+npm start --provider deepseek --model deepseek-chat
 
-# 启动标准界面
-aicli start
+# Start with custom API key
+npm start --api-key "your-api-key"
 
-# 会话管理
-aicli session --list              # 列出所有会话
-aicli session --save <id>         # 保存会话
-aicli session --load <id>         # 加载会话
-aicli session --export <id>       # 导出会话
-aicli session --import <file>     # 导入会话
+# Set file limits
+npm start --max-files 10 --max-file-size 20
 
-# 项目管理
-aicli project --info              # 显示项目信息
-aicli project --scan              # 扫描项目文件
-aicli project --tree [depth]      # 显示文件树
+# Enable/disable streaming
+npm start --streaming
+npm start --no-streaming
 
-# 统计信息
-aicli stats                       # 显示使用统计
-
-# 基础命令
-aicli status                      # 查看状态
-aicli provider --set deepseek      # 切换提供商
-aicli provider --list             # 列出所有提供商
-aicli model --set deepseek-coder   # 切换模型
-aicli model --list                # 列出当前提供商的模型
-aicli config --list                # 显示配置
-aicli config --reset              # 重置配置
-aicli env                         # 显示环境变量配置说明
+# Attachment management
+npm start --auto-clear          # Enable auto-clear (default)
+npm start --no-auto-clear       # Disable auto-clear
 ```
 
-## 🔧 配置
+## 🔧 Configuration
 
-### 环境变量
+### Environment Variables
 
-| 变量名 | 描述 | 获取地址 |
-|--------|------|----------|
-| `ANTHROPIC_API_KEY` | Claude API Key | https://console.anthropic.com |
+| Variable | Description | Get API Key |
+|----------|-------------|-------------|
 | `DEEPSEEK_API_KEY` | DeepSeek API Key | https://platform.deepseek.com |
-| `MOONSHOT_API_KEY` | Kimi API Key | https://platform.moonshot.cn |
 | `OPENAI_API_KEY` | OpenAI API Key | https://platform.openai.com |
-| `GOOGLE_API_KEY` | Gemini API Key | https://makersuite.google.com |
-| `GROK_API_KEY` | Grok API Key | https://console.x.ai |
 
-### 配置文件
+### Configuration File
 
-配置文件位于 `~/.config/aicli/config.json`，包含以下选项：
+Configuration file is located at `~/.config/aicli/config.json`:
 
 ```json
 {
-  "currentProvider": "claude",
-  "currentModel": "claude-3-sonnet-20240229",
+  "currentProvider": "deepseek",
+  "currentModel": "deepseek-chat",
   "theme": "dark",
   "autoSave": true,
   "sessionHistory": 100
 }
 ```
 
-## 📁 增强项目结构
+## 📁 Supported File Types
 
-```
-aicli/
-├── src/
-│   ├── types/           # TypeScript 类型定义
-│   │   └── index.ts     # 统一类型定义
-│   ├── config/          # 配置管理
-│   │   ├── providers.ts # 提供商配置
-│   │   └── index.ts     # 配置管理器
-│   ├── core/            # 核心功能
-│   │   ├── project-context.ts      # 项目上下文
-│   │   ├── status-bar.ts           # 状态栏
-│   │   ├── streaming-ai.ts         # 流式 AI
-│   │   ├── file-operations.ts      # 文件操作
-│   │   ├── session-manager.ts      # 会话管理
-│   │   ├── clipboard-processor.ts  # 剪贴板处理器
-│   │   ├── file-processor.ts       # 文件处理器
-│   │   └── screenshot-paste-handler.ts # 截图粘贴处理器
-│   ├── services/        # AI 服务
-│   ├── commands/        # 斜杠命令
-│   │   ├── slash.ts             # 基础命令
-│   │   └── enhanced-slash.ts     # 增强命令
-│   ├── ui/             # 用户界面
-│   │   ├── terminal.ts           # 基础终端
-│   │   └── modern-cli-interface.ts # 现代化界面
-│   ├── index.ts        # 主入口
-│   └── index-enhanced.ts # 增强入口
-├── dist/               # 编译输出
-├── SCREENSHOT_PASTE.md # 截图粘贴功能文档
-├── README.md           # 说明文档
-└── package.json        # 项目配置
-```
+### 📄 Documents
+- PDF, DOC, DOCX, TXT, MD, RTF
 
-## 🛠️ 开发
+### 🖼️ Images
+- PNG, JPG, JPEG, GIF, WebP, BMP, SVG
 
-### 环境要求
+### 📝 Code
+- JavaScript, TypeScript, Python, Java, C++, JSON, XML, YAML
+- HTML, CSS, Vue, React, Go, Rust, PHP, Ruby
+
+### 💾 Other
+- All file types supported with automatic content detection
+
+## 🛠️ Development
+
+### Requirements
 
 - Node.js >= 16.0.0
 - npm >= 7.0.0
 
-### 安装依赖
+### Install Dependencies
 
 ```bash
 npm install
 ```
 
-### 开发模式
+### Development Mode
 
 ```bash
 npm run dev
 ```
 
-### 构建
+### Build
 
 ```bash
 npm run build
 ```
 
-### 测试
+### Test
 
 ```bash
 npm test
 ```
 
-### 代码检查
+### Lint
 
 ```bash
 npm run lint
 npm run typecheck
 ```
 
-## 📦 发布
+## 📦 Publishing
 
-### 构建和发布
+### Build and Publish
 
 ```bash
 npm run build
 npm publish
 ```
 
-## 🤝 贡献
+## 🤝 Contributing
 
-欢迎提交 Issue 和 Pull Request！
+Contributions are welcome! Please feel free to submit issues and pull requests.
 
-1. Fork 本仓库
-2. 创建你的特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交你的更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 打开一个 Pull Request
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-## 📄 许可证
+## 📄 License
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 致谢
+## 🙏 Acknowledgments
 
-- Claude CLI - 界面设计灵感
-- OpenAI - AI 技术支持
-- 所有开源贡献者
+- All open-source contributors
+- Terminal UI design inspirations
+- AI technology providers
 
-## 📞 联系
+## 📞 Contact
 
 - GitHub Issues: https://github.com/your-username/aicli/issues
 - Email: your-email@example.com
 
 ---
 
-## 🎉 完成！享受 Claude Code CLI 风格的增强体验！🚀
+## 🎉 Enjoy the Enhanced AI Programming Experience! 🚀
 
-### 🌟 主要改进对比
+### 🌟 Key Features
 
-| 特性 | 原版 | 增强版 |
-|------|------|--------|
-| 响应方式 | 块状响应 | 流式响应 |
-| 界面设计 | 基础终端 | 现代化界面 + 状态栏 |
-| 项目感知 | 无 | 自动检测 |
-| 文件操作 | 基础 | 丰富命令 |
-| 会话管理 | 基础 | 完整持久化 |
-| 性能 | 标准 | 优化加速 + 防抖动渲染 |
-| 截图粘贴 | 无 | 智能识别 + 自动引用 |
-| 剪贴板 | 基础文本 | 图片、文件、多内容 |
+| Feature | Description |
+|---------|-------------|
+| **Screenshot Paste** | Direct screenshot pasting with automatic processing |
+| **File Drag & Drop** | Drag files directly into terminal |
+| **Streaming Responses** | Real-time AI replies with interrupt support |
+| **Modern UI** | Beautiful terminal interface with status bar |
+| **Project Awareness** | Automatic project context detection |
+| **Multi-Model Support** | Support for multiple AI providers |
+| **Smart Commands** | Rich slash commands for productivity |
 
-### 🚀 下一步计划
+### 🚀 Technical Highlights
 
-- [ ] 代码补全和智能提示
-- [ ] 多文件编辑支持
-- [ ] 插件系统
-- [ ] 团队协作功能
-- [ ] 更多 AI 模型集成
+- **TypeScript**: Fully typed for better development experience
+- **Modular Architecture**: Clean separation of concerns
+- **Event-Driven**: Responsive and efficient event handling
+- **Cross-Platform**: Works on macOS, Linux, and Windows
+- **Performance Optimized**: Anti-flicker rendering and memory management
 
-### 💡 使用提示
+### 💡 Pro Tips
 
-1. **首次使用**: 先配置 API Key，然后运行 `aicli modern`
-2. **截图粘贴**: 使用 `/paste` 命令快速粘贴截图和文件
-3. **项目感知**: 在项目目录中启动，自动识别项目类型
-4. **流式响应**: 支持实时中断，按 Ctrl+C 停止
-5. **会话保存**: 使用 `/session save` 保存重要对话
-6. **文件操作**: 使用 `/tree`, `/search`, `/cat` 等命令管理文件
-7. **性能优化**: 界面使用防抖动渲染，避免频繁刷新
+1. **First Time Use**: Configure API key, then run `npm start`
+2. **Attachment Features**: Use `/paste` for screenshots, or drag files to terminal
+3. **Attachment Management**: Use `/attachments` to view, `/clear` to clear
+4. **Project Context**: Start in project directory for automatic detection
+5. **Streaming**: Support real-time interruption with Ctrl+C
+6. **File Operations**: Use `/tree`, `/search`, `/cat` for file management
+7. **Performance**: Interface uses anti-flicker rendering for smooth experience
 
 ---
 
-**享受现代化的 AI 编程体验！** 🎯
+**Enjoy modern AI programming assistance!** 🎯
 
-## 📝 更新日志
+## 📝 Changelog
 
-### v2.1.0 - 📸 截图粘贴版本
+### v2.1.0 - 📸 Screenshot Paste Version
 
-#### ✨ 新增功能
-- 🎯 **截图粘贴功能**: 支持直接粘贴截图到输入框
-- 📋 **智能剪贴板识别**: 自动检测图片、文件、文本内容
-- 🎨 **现代化界面升级**: 优化渲染性能，防抖动机制
-- ⚡ **性能优化**: 解决界面频繁刷新问题
-- 🛠️ **新命令**: 添加 `/paste` 智能粘贴命令
+#### ✨ New Features
+- 🎯 **Screenshot Paste Function**: Support direct screenshot pasting into input field
+- 📋 **Smart Clipboard Recognition**: Automatic detection of images, files, text content
+- 🎨 **Modern UI Upgrade**: Optimized rendering performance, anti-flicker mechanism
+- ⚡ **Performance Optimization**: Resolved interface frequent refresh issues
+- 🛠️ **New Commands**: Added `/paste` smart paste command
 
-#### 🔧 技术改进
-- 重构类型系统，统一到 `src/types/index.ts`
-- 优化渲染流程，添加防抖动机制
-- 修复栈溢出错误，简化键盘事件处理
-- 增强剪贴板处理器，支持多种内容格式
-- 完善文件处理器，支持大文件处理
+#### 🔧 Technical Improvements
+- Refactored type system, unified to `src/types/index.ts`
+- Optimized rendering process, added anti-flicker mechanism
+- Fixed stack overflow errors, simplified keyboard event handling
+- Enhanced clipboard processor supporting multiple content formats
+- Improved file processor supporting large file handling
 
-#### 📚 文档
-- 新增 `SCREENSHOT_PASTE.md` 详细功能文档
-- 更新 README，添加截图粘贴使用指南
-- 完善项目结构说明
+#### 📚 Documentation
+- Updated README with screenshot paste usage guide
+- Improved project structure documentation
 
-### v2.0.0 - 🚀 基础增强版本
+### v2.0.0 - 🚀 Enhanced Base Version
 
-- Claude Code CLI 风格界面
-- 流式响应支持
-- 状态栏显示
-- 项目感知功能
-- 增强斜杠命令
-- 会话管理系统
+- Modern terminal interface design
+- Streaming response support
+- Status bar display
+- Project awareness functionality
+- Enhanced slash commands
+- Session management system

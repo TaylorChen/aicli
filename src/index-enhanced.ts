@@ -29,6 +29,7 @@ import { SessionManager } from './core/session-manager';
 import { sessionManager } from './core/session-manager';
 import { ClaudeStyleLayout } from './ui/claude-style-layout';
 import { ModernCLIInterface } from './ui/modern-cli-interface';
+import { EnhancedCLIInterface } from './ui/enhanced-cli-interface';
 
 const program = new Command();
 
@@ -40,16 +41,25 @@ program
 program
   .command('start')
   .alias('s')
-  .description('启动交互式对话')
+  .description('启动增强版交互式对话（支持文件拖拽和附件）')
   .option('--project <path>', '指定项目路径')
   .option('--session <id>', '继续指定会话')
   .option('--provider <name>', '指定AI提供商')
   .option('--model <name>', '指定AI模型')
   .option('--claude-style', '使用Claude风格界面')
   .option('--modern', '使用现代化界面')
+  .option('--enhanced', '使用增强版界面（支持文件拖拽和附件）')
   .option('--theme <theme>', '界面主题 (claude|qorder|auto)')
   .option('--no-sidebar', '隐藏侧边栏')
   .option('--no-statusbar', '隐藏状态栏')
+  .option('--api-key <key>', 'AI API密钥')
+  .option('--base-url <url>', 'API基础URL')
+  .option('--max-files <number>', '最大文件数量 (默认: 20)')
+  .option('--max-file-size <size>', '最大文件大小MB (默认: 50)')
+  .option('--auto-clear', '启用自动清除附件 (默认)')
+  .option('--no-auto-clear', '禁用自动清除附件')
+  .option('--streaming', '启用流式响应 (默认)')
+  .option('--no-streaming', '禁用流式响应')
   .action((options) => {
     // 设置项目路径
     if (options.project) {
@@ -72,8 +82,23 @@ program
       }
     }
 
-    // 选择界面类型
-    if (options.modern || options.theme || !options.claudeStyle) {
+    // 选择界面类型 - 默认使用增强版界面
+    if (options.enhanced || (!options.claudeStyle && !options.modern && !options.theme)) {
+      // 使用增强版界面（支持文件拖拽和附件）
+      const enhancedOptions = {
+        provider: options.provider || 'deepseek',
+        apiKey: options.apiKey || process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY,
+        model: options.model,
+        baseUrl: options.baseUrl,
+        maxFiles: options.maxFiles ? parseInt(options.maxFiles) : 20,
+        maxFileSize: options.maxFileSize ? parseInt(options.maxFileSize) * 1024 * 1024 : 50 * 1024 * 1024,
+        enableStreaming: options.streaming !== false,
+        autoClearAttachments: options.autoClear !== false
+      };
+
+      const enhancedUI = new EnhancedCLIInterface(enhancedOptions);
+      enhancedUI.start();
+    } else if (options.modern || options.theme) {
       // 使用现代化界面
       const modernUI = new ModernCLIInterface({
         theme: options.theme as any || 'auto',

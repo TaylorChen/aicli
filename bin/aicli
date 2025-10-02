@@ -6,7 +6,7 @@ const path = require('path');
 
 // 获取当前脚本目录
 const scriptDir = path.dirname(__filename);
-const enhancedCli = path.join(scriptDir, '..', 'dist', 'index-enhanced.js');
+const enhancedCli = path.join(scriptDir, '..', 'dist', 'enhanced-index.js');
 
 // 启动增强版 AICLI
 const child = spawn('node', [enhancedCli, ...process.argv.slice(2)], {
