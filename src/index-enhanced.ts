@@ -82,9 +82,9 @@ program
       }
     }
 
-    // 选择界面类型 - 默认使用增强版界面
+    // 选择界面类型 - 默认使用现代化增强版界面
     if (options.enhanced || (!options.claudeStyle && !options.modern && !options.theme)) {
-      // 使用增强版界面（支持文件拖拽和附件）
+      // 使用增强版界面（支持文件拖拽和附件，现在显示现代化界面）
       const enhancedOptions = {
         provider: options.provider || 'deepseek',
         apiKey: options.apiKey || process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY,
@@ -99,7 +99,7 @@ program
       const enhancedUI = new EnhancedCLIInterface(enhancedOptions);
       enhancedUI.start();
     } else if (options.modern || options.theme) {
-      // 使用现代化界面
+      // 使用现代化界面（备用选项）
       const modernUI = new ModernCLIInterface({
         theme: options.theme as any || 'auto',
         showSidebar: options.sidebar !== false,

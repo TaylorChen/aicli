@@ -184,10 +184,7 @@ async function main(): Promise<void> {
     }
 
     if (!apiKey && !options.apiKey) {
-      console.log(chalk.yellow('⚠️ 未检测到API密钥'));
-      console.log(chalk.gray('请设置环境变量或使用 --api-key 参数'));
-      console.log(chalk.gray('例如: export DEEPSEEK_API_KEY="your-api-key"'));
-      console.log('');
+      // 静默处理，不在启动时输出，由界面内部处理状态显示
     }
 
     // 设置默认选项

@@ -84,6 +84,13 @@ export class TerminalFileUploader extends EventEmitter {
     this.showAttachmentList();
   }
 
+  public async initializeSilent(): Promise<void> {
+    // 静默初始化，不输出任何信息以避免干扰界面
+    // 拖拽检测已经在构造函数中设置，这里不需要做任何操作
+
+    // 不调用 showAttachmentList() 避免额外输出
+  }
+
   // 供外部接口调用来处理可能的文件路径输入
   public async processInput(input: string): Promise<boolean> {
     const trimmedInput = input.trim();
