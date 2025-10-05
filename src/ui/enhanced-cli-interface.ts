@@ -49,7 +49,7 @@ export class EnhancedCLIInterface {
   private vimMode = false;
   private vimBuffer = '';
   private vimCursorPos = 0;
-  private vimModeType: 'insert' | 'normal' | 'visual' = 'insert';
+  private vimModeType: 'insert' | 'normal' | 'visual' | 'command' = 'insert';
   private vimCommandBuffer = '';
   private vimLastYank = '';
   private vimIsRecording = false;
@@ -451,18 +451,26 @@ export class EnhancedCLIInterface {
       output: process.stdout,
       prompt: this.buildPrompt(),
       terminal: true,
-      historySize: 1000
+      historySize: 1000,
+      // 禁用自动补全和默认的按键处理
+      completer: undefined,
+      tabSize: 4
     });
 
     // 设置键盘快捷键
     this.setupKeyboardShortcuts();
 
-    // 设置终端为非原始模式，确保不捕获鼠标事件
-    if (process.stdin.isTTY) {
-      process.stdin.setRawMode(false);
-    }
+    // 设置终端为原始模式以支持Vim模式的单按键捕获
+    // 注意：这需要在setupReadlineEnhancements中设置，因为readline需要控制
 
     this.readline.on('line', async (input: string) => {
+      // 如果在Vim模式下，完全忽略line事件
+      // Vim模式下的所有输入都由keypress处理器处理
+      if (this.vimMode) {
+        // 在Vim模式下，不显示提示符，不处理输入
+        return;
+      }
+
       const trimmedInput = input.trim();
       if (trimmedInput) {
         // 显示用户输入，类似ChatGPT
@@ -531,7 +539,10 @@ export class EnhancedCLIInterface {
   private setupReadlineEnhancements(): void {
     // 处理特殊按键
     readline.emitKeypressEvents(process.stdin);
-    if (process.stdin.setRawMode) {
+
+    // 启用原始模式以支持Vim模式的单按键捕获
+    // 必须在readline创建之后设置，否则会冲突
+    if (process.stdin.setRawMode && process.stdin.isTTY) {
       process.stdin.setRawMode(true);
     }
 
@@ -663,7 +674,8 @@ export class EnhancedCLIInterface {
     let vimIndicator = '';
     if (this.vimMode) {
       const modeColor = this.vimModeType === 'normal' ? chalk.green :
-                       this.vimModeType === 'visual' ? chalk.yellow : chalk.blue;
+                       this.vimModeType === 'visual' ? chalk.yellow :
+                       this.vimModeType === 'command' ? chalk.magenta : chalk.blue;
       vimIndicator = modeColor(`[${this.vimModeType.toUpperCase()}] `);
     }
 
@@ -679,6 +691,12 @@ export class EnhancedCLIInterface {
 
   private async handleInput(input: string): Promise<void> {
     if (!input) return;
+
+    // 如果在Vim模式下，完全忽略所有输入
+    // Vim模式下的所有操作都由keypress处理器处理
+    if (this.vimMode) {
+      return;
+    }
 
     try {
       // 处理多行输入模式
@@ -1462,24 +1480,42 @@ export class EnhancedCLIInterface {
 
   private handleToggleVimMode(): void {
     this.vimMode = !this.vimMode;
+
     if (this.vimMode) {
       this.vimModeType = 'normal'; // 默认进入Normal模式
-      this.vimBuffer = '';
-      this.vimCursorPos = 0;
+
+      // 同步当前readline的输入到Vim buffer
+      this.updateVimBufferFromReadline();
+
       console.log(chalk.green('✅ Vim模式已启用'));
+
+      // 检查是否支持原始模式
+      if (!process.stdin.isTTY) {
+        console.log(chalk.yellow('⚠️ 检测到非交互式环境，Vim模式功能可能受限'));
+        console.log(chalk.gray('💡 建议在真实终端中使用以获得完整Vim体验'));
+      }
+
       console.log(chalk.gray('📋 基础Vim命令:'));
       console.log(chalk.gray('  h/j/k/l - 移动光标  w/b - 单词跳转  i/I/a/A - 插入模式'));
       console.log(chalk.gray('  x/X - 删除字符  dd - 删除行  yy - 复制行  p/P - 粘贴'));
-      console.log(chalk.gray('  Esc - Normal模式  :w - 保存  :q - 退出Vim模式'));
+      console.log(chalk.gray('  Esc - Normal模式  :q - 退出Vim模式  Ctrl+C - 强制退出'));
       console.log(chalk.blue('🎯 当前模式: [NORMAL]'));
+
+      // 在Vim模式下，清除readline提示符并显示Vim行
+      setTimeout(() => {
+        process.stdout.write('\x1b[2K\r'); // 清除当前行
+        this.redrawVimLine();
+      }, 100);
     } else {
       console.log(chalk.yellow('⚠️ Vim模式已禁用'));
       this.vimModeType = 'insert';
-    }
 
-    // 重新显示提示符
-    process.stdout.write('\n');
-    this.readline.prompt();
+      // 退出Vim模式，清除Vim显示并恢复readline提示符
+      process.stdout.write('\x1b[2K\r'); // 清除当前行
+      if (this.readline) {
+        this.readline.prompt();
+      }
+    }
   }
 
   private handleToggleMultiLineMode(): void {
@@ -1567,12 +1603,30 @@ export class EnhancedCLIInterface {
       return this.handleVimInsertMode(str, key);
     } else if (this.vimModeType === 'visual') {
       return this.handleVimVisualMode(str, key);
+    } else if (this.vimModeType === 'command') {
+      return this.handleVimCommandMode(str, key);
     }
     return false;
   }
 
   private handleVimNormalMode(str: string, key: any): boolean {
-    // Normal模式下的Vim命令
+    // 特殊处理：Ctrl+C 用于退出Vim模式
+    if (key.ctrl && key.name === 'c') {
+      this.vimMode = false;
+      this.vimModeType = 'insert';
+      console.log(chalk.yellow('⚠️ Vim模式已禁用 (Ctrl+C)'));
+      process.stdout.write('\x1b[2K\r'); // 清除当前行
+      if (this.readline) {
+        this.readline.prompt();
+      }
+      return true;
+    }
+
+    // 特殊处理：Enter键在Vim模式下不应该退出，而是被忽略
+    if (key.name === 'enter' || key.name === 'return') {
+      return true; // 在Vim模式下忽略Enter键
+    }
+
     switch (str) {
       // 移动命令
       case 'h':
@@ -1718,17 +1772,66 @@ export class EnhancedCLIInterface {
   }
 
   private handleVimInsertMode(str: string, key: any): boolean {
-    // Insert模式下，大部分按键直接传递给readline
-    // 只有Esc键会退出Insert模式
+    // Insert模式下，处理字符输入和特殊按键
+
+    // 特殊处理：Enter键应该提交命令
+    if (key.name === 'enter' || key.name === 'return') {
+      // 退出Vim模式，让readline正常处理Enter
+      this.vimMode = false;
+      this.vimModeType = 'insert';
+      return false; // 让Enter键正常处理
+    }
+
+    // Esc键退出到Normal模式
     if (key.name === 'escape') {
       this.vimEnterNormalMode();
       return true;
     }
-    return false; // 让其他按键正常处理
+
+    // Backspace键删除字符
+    if (key.name === 'backspace' || key.name === 'delete') {
+      if (this.vimCursorPos > 0) {
+        this.vimBuffer = this.vimBuffer.slice(0, this.vimCursorPos - 1) + this.vimBuffer.slice(this.vimCursorPos);
+        this.vimCursorPos--;
+        this.redrawVimLine();
+      }
+      return true;
+    }
+
+    // 方向键移动光标
+    if (key.name === 'left') {
+      this.vimCursorPos = Math.max(0, this.vimCursorPos - 1);
+      this.redrawVimLine();
+      return true;
+    }
+    if (key.name === 'right') {
+      this.vimCursorPos = Math.min(this.vimBuffer.length, this.vimCursorPos + 1);
+      this.redrawVimLine();
+      return true;
+    }
+
+    // 普通字符插入
+    if (str && str.length === 1 && !key.ctrl && !key.meta) {
+      this.vimBuffer = this.vimBuffer.slice(0, this.vimCursorPos) + str + this.vimBuffer.slice(this.vimCursorPos);
+      this.vimCursorPos++;
+      this.redrawVimLine();
+      return true;
+    }
+
+    return false; // 其他按键让默认处理
   }
 
   private handleVimVisualMode(str: string, key: any): boolean {
     // Visual模式 (简化实现)
+
+    // 特殊处理：Enter键应该提交命令，而不是被Vim拦截
+    if (key.name === 'enter' || key.name === 'return') {
+      // 退出Vim模式，让readline正常处理Enter
+      this.vimMode = false;
+      this.vimModeType = 'insert';
+      return false; // 让Enter键正常处理
+    }
+
     switch (str) {
       case 'h':
       case 'j':
@@ -1755,6 +1858,40 @@ export class EnhancedCLIInterface {
     return false;
   }
 
+  private handleVimCommandMode(str: string, key: any): boolean {
+    // 命令模式处理
+
+    // Enter键执行命令
+    if (key.name === 'enter' || key.name === 'return') {
+      this.executeVimCommand();
+      return true;
+    }
+
+    // Esc键退出命令模式
+    if (key.name === 'escape') {
+      this.vimEnterNormalMode();
+      return true;
+    }
+
+    // Backspace键删除字符
+    if (key.name === 'backspace' || key.name === 'delete') {
+      if (this.vimCommandBuffer.length > 0) {
+        this.vimCommandBuffer = this.vimCommandBuffer.slice(0, -1);
+        this.redrawVimCommandLine();
+      }
+      return true;
+    }
+
+    // 普通字符添加到命令缓冲区
+    if (str && str.length === 1 && !key.ctrl && !key.meta) {
+      this.vimCommandBuffer += str;
+      this.redrawVimCommandLine();
+      return true;
+    }
+
+    return false;
+  }
+
   // ==================== Vim模式辅助方法 ====================
 
   private vimEnterNormalMode(): void {
@@ -1773,8 +1910,69 @@ export class EnhancedCLIInterface {
   }
 
   private vimEnterCommandMode(): void {
-    console.log('\n:');
-    // 简化实现：直接处理常见命令
+    this.vimModeType = 'command';
+    this.vimCommandBuffer = '';
+    this.updateVimStatus();
+    // 显示命令提示符
+    this.redrawVimCommandLine();
+  }
+
+  private executeVimCommand(): void {
+    const command = this.vimCommandBuffer.trim();
+
+    switch (command) {
+      case 'q':
+        // 退出Vim模式
+        this.vimMode = false;
+        this.vimModeType = 'insert';
+        console.log(chalk.yellow('⚠️ Vim模式已退出'));
+        if (this.readline) {
+          this.readline.prompt();
+        }
+        break;
+
+      case 'w':
+        // "保存"（这里只是模拟）
+        console.log(chalk.green('✅ 已保存'));
+        this.vimEnterNormalMode();
+        break;
+
+      case 'wq':
+        // 保存并退出
+        console.log(chalk.green('✅ 已保存'));
+        this.vimMode = false;
+        this.vimModeType = 'insert';
+        console.log(chalk.yellow('⚠️ Vim模式已退出'));
+        if (this.readline) {
+          this.readline.prompt();
+        }
+        break;
+
+      case 'q!':
+        // 强制退出
+        this.vimMode = false;
+        this.vimModeType = 'insert';
+        console.log(chalk.yellow('⚠️ Vim模式已强制退出'));
+        if (this.readline) {
+          this.readline.prompt();
+        }
+        break;
+
+      default:
+        if (command) {
+          console.log(chalk.red(`❌ 未知命令: ${command}`));
+        }
+        this.vimEnterNormalMode();
+        break;
+    }
+
+    this.vimCommandBuffer = '';
+  }
+
+  private redrawVimCommandLine(): void {
+    // 清除当前行并显示命令行
+    process.stdout.write('\x1b[2K\r'); // 清除行
+    process.stdout.write(chalk.blue(':') + chalk.white(this.vimCommandBuffer));
   }
 
   private vimEnterSearchMode(): void {
@@ -1783,9 +1981,15 @@ export class EnhancedCLIInterface {
   }
 
   private updateVimStatus(): void {
-    // 更新提示符显示
-    process.stdout.write('\n');
-    this.readline.prompt();
+    // 根据不同模式更新状态显示
+    if (this.vimModeType === 'command') {
+      // 命令模式直接显示命令行
+      this.redrawVimCommandLine();
+    } else {
+      // 其他模式更新提示符并显示当前行
+      process.stdout.write('\n');
+      this.redrawVimLine();
+    }
   }
 
   private vimMoveCursor(offset: number): void {
@@ -2023,18 +2227,35 @@ export class EnhancedCLIInterface {
     const afterCursor = this.vimBuffer.slice(this.vimCursorPos + 1);
 
     // 在Vim模式下显示光标位置
-    const cursor = this.vimModeType === 'normal' ?
-      chalk.bgBlue(atCursor) :
-      atCursor;
+    let cursor;
+    if (this.vimModeType === 'normal') {
+      cursor = chalk.bgBlue(atCursor);
+    } else if (this.vimModeType === 'insert') {
+      cursor = chalk.bgGreen(atCursor);
+    } else if (this.vimModeType === 'visual') {
+      cursor = chalk.bgYellow(atCursor);
+    } else {
+      cursor = atCursor;
+    }
 
-    process.stdout.write(this.buildPrompt() + beforeCursor + cursor + afterCursor);
+    // 只在非命令模式下显示完整提示符
+    if (this.vimModeType === 'command') {
+      // 命令模式不显示普通提示符
+      process.stdout.write(chalk.blue(':') + chalk.white(this.vimCommandBuffer));
+    } else {
+      process.stdout.write(this.buildPrompt() + beforeCursor + cursor + afterCursor);
+    }
   }
 
   private updateVimBufferFromReadline(): void {
     // 同步readline的输入到Vim buffer
     if (this.readline && this.readline.line !== undefined) {
-      this.vimBuffer = this.readline.line;
+      this.vimBuffer = this.readline.line || '';
       this.vimCursorPos = this.readline.cursor || 0;
+    } else {
+      // 如果没有readline输入，初始化为空
+      this.vimBuffer = '';
+      this.vimCursorPos = 0;
     }
   }
 }
