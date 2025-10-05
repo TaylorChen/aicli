@@ -39,6 +39,22 @@ export class EnhancedCLIInterface {
   private isStreaming = false;
   private currentSessionId: string | null = null;
 
+  // 增强交互功能
+  private commandHistory: string[] = [];
+  private historyIndex = -1;
+  private multiLineBuffer: string[] = [];
+  private isMultiLineMode = false;
+
+  // Vim模式相关
+  private vimMode = false;
+  private vimBuffer = '';
+  private vimCursorPos = 0;
+  private vimModeType: 'insert' | 'normal' | 'visual' = 'insert';
+  private vimCommandBuffer = '';
+  private vimLastYank = '';
+  private vimIsRecording = false;
+  private vimMacroBuffer = '';
+
   constructor(private options: EnhancedCLIOptions) {
     // 设置默认选项
     this.options = {
@@ -119,6 +135,25 @@ export class EnhancedCLIInterface {
     this.displaySimpleWelcome();
     this.displayStatusBar();
     this.displayInputArea();
+  }
+
+  private displayWelcomeHeader(): void {
+    const modelInfo = this.aiService.getModelInfo();
+
+    console.log('');
+    console.log(chalk.cyan.bold('🚀 AICLI - Enhanced AI Programming Assistant'));
+    console.log(chalk.gray(`🤖 ${modelInfo.model} (${modelInfo.provider})`));
+
+    if (this.currentAttachments.length > 0) {
+      console.log(chalk.blue(`📎 ${this.currentAttachments.length} 个附件已添加`));
+    }
+
+    if (this.currentSessionId) {
+      console.log(chalk.blue(`📝 会话: ${this.currentSessionId.substring(0, 8)}...`));
+    }
+
+    console.log(chalk.gray('💬 开始对话，或输入 /help 查看帮助'));
+    console.log('');
   }
 
   private displaySimpleWelcome(): void {
@@ -455,11 +490,22 @@ export class EnhancedCLIInterface {
   }
 
   private setupKeyboardShortcuts(): void {
-    // Ctrl+D 退出
+    // 读取单字符输入
     process.stdin.on('data', (key) => {
-      if (key.toString() === '\u0004') { // Ctrl+D
+      const keyStr = key.toString();
+
+      // Ctrl+D 退出
+      if (keyStr === '\u0004') {
         console.log(chalk.yellow('\n👋 再见！'));
         process.exit(0);
+      }
+
+      // Ctrl+L 清屏
+      if (keyStr === '\u000C') {
+        console.clear();
+        this.displayWelcomeHeader();
+        this.readline.prompt();
+        return;
       }
     });
 
@@ -475,6 +521,120 @@ export class EnhancedCLIInterface {
         this.readline.prompt();
       }
     });
+
+    // 增强readline输入处理
+    if (this.readline) {
+      this.setupReadlineEnhancements();
+    }
+  }
+
+  private setupReadlineEnhancements(): void {
+    // 处理特殊按键
+    readline.emitKeypressEvents(process.stdin);
+    if (process.stdin.setRawMode) {
+      process.stdin.setRawMode(true);
+    }
+
+    process.stdin.on('keypress', (str, key) => {
+      if (!key) return;
+
+      // Vim模式处理
+      if (this.vimMode) {
+        const vimHandled = this.handleVimKeypress(str, key);
+        if (vimHandled) {
+          return;
+        }
+      }
+
+      // Ctrl+L 清屏
+      if (key.ctrl && key.name === 'l') {
+        console.clear();
+        this.displayWelcomeHeader();
+        this.readline.prompt();
+        return;
+      }
+
+      // 上箭头 - 历史导航 (简化版本)
+      if (key.name === 'up' && this.commandHistory.length > 0) {
+        if (this.historyIndex < this.commandHistory.length - 1) {
+          this.historyIndex++;
+          const historyCommand = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+          // 简单的输出替换方式
+          process.stdout.write('\x1b[2K\r'); // 清除当前行
+          process.stdout.write(this.buildPrompt() + historyCommand);
+        }
+        return;
+      }
+
+      // 下箭头 - 历史导航
+      if (key.name === 'down') {
+        if (this.historyIndex > 0) {
+          this.historyIndex--;
+          const historyCommand = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+          process.stdout.write('\x1b[2K\r'); // 清除当前行
+          process.stdout.write(this.buildPrompt() + historyCommand);
+        } else if (this.historyIndex === 0) {
+          this.historyIndex = -1;
+          process.stdout.write('\x1b[2K\r'); // 清除当前行
+          this.readline.prompt();
+        }
+        return;
+      }
+
+      // Esc+Esc - 编辑上一条消息
+      if (key.name === 'escape' && this.lastEscapePress) {
+        if (this.commandHistory.length > 0) {
+          const lastCommand = this.commandHistory[this.commandHistory.length - 1];
+          process.stdout.write('\x1b[2K\r'); // 清除当前行
+          process.stdout.write(this.buildPrompt() + lastCommand);
+        }
+        this.lastEscapePress = undefined;
+        return;
+      } else if (key.name === 'escape') {
+        this.lastEscapePress = Date.now();
+        setTimeout(() => {
+          this.lastEscapePress = undefined;
+        }, 500);
+        return;
+      }
+
+      // Shift+Enter - 多行输入
+      if (key.name === 'enter' && key.shift) {
+        this.handleMultiLineInput();
+        return;
+      }
+    });
+  }
+
+  private lastEscapePress?: number;
+
+  private handleMultiLineInput(): void {
+    // 启用多行输入模式
+    this.isMultiLineMode = true;
+    console.log(chalk.green('✅ 多行输入模式已启用'));
+    console.log(chalk.gray('💡 输入空行结束多行输入'));
+    process.stdout.write(chalk.gray('... '));
+  }
+
+  private handleBackslashEnter(): void {
+    console.log(chalk.gray('💡 检测到\\，准备多行输入'));
+    this.isMultiLineMode = true;
+    process.stdout.write(chalk.gray('... '));
+  }
+
+  private addToHistory(command: string): void {
+    if (command.trim()) {
+      // 避免重复添加最近的命令，提高性能
+      const lastCommand = this.commandHistory[this.commandHistory.length - 1];
+      if (lastCommand !== command) {
+        this.commandHistory.push(command);
+        // 限制历史记录数量
+        if (this.commandHistory.length > 1000) {
+          this.commandHistory = this.commandHistory.slice(-1000);
+        }
+      }
+    }
+    this.historyIndex = -1;
   }
 
   private disableMouseTracking(): void {
@@ -499,26 +659,112 @@ export class EnhancedCLIInterface {
     const attachmentCount = this.currentAttachments.length;
     const attachmentIndicator = attachmentCount > 0 ? chalk.cyan(`📎${attachmentCount} `) : '';
 
+    // Vim模式指示器
+    let vimIndicator = '';
+    if (this.vimMode) {
+      const modeColor = this.vimModeType === 'normal' ? chalk.green :
+                       this.vimModeType === 'visual' ? chalk.yellow : chalk.blue;
+      vimIndicator = modeColor(`[${this.vimModeType.toUpperCase()}] `);
+    }
+
+    // 会话指示器
+    let sessionIndicator = '';
+    if (this.currentSessionId) {
+      sessionIndicator = chalk.magenta(`[${this.currentSessionId.substring(0, 6)}] `);
+    }
+
     // 更简洁的对话式提示符
-    return `${attachmentIndicator}${chalk.blue('❯ ')}`;
+    return `${attachmentIndicator}${vimIndicator}${sessionIndicator}${chalk.blue('❯ ')}`;
   }
 
   private async handleInput(input: string): Promise<void> {
     if (!input) return;
 
+    try {
+      // 处理多行输入模式
+      if (this.isMultiLineMode || this.multiLineBuffer.length > 0) {
+        if (input === '') {
+          // 空行结束多行输入
+          this.isMultiLineMode = false;
+          const fullInput = this.multiLineBuffer.join('\n');
+          this.multiLineBuffer = [];
+
+          // 防止过长的多行输入
+          if (fullInput.length > 50000) {
+            console.log(chalk.red('❌ 输入内容过长，请分段提交'));
+            return;
+          }
+
+          // 添加到历史记录
+          this.addToHistory(fullInput);
+
+          // 处理完整的输入
+          await this.processFullInput(fullInput);
+        } else {
+          // 防止过多的行数
+          if (this.multiLineBuffer.length >= 1000) {
+            console.log(chalk.red('❌ 行数过多，请分段提交'));
+            this.multiLineBuffer = [];
+            this.isMultiLineMode = false;
+            return;
+          }
+          // 继续多行输入
+          this.multiLineBuffer.push(input);
+        }
+        return;
+      }
+
+      // 防止过长的单行输入
+      if (input.length > 10000) {
+        console.log(chalk.red('❌ 输入内容过长，请分段提交'));
+        return;
+      }
+
+      // 处理Bash模式 (!前缀)
+      if (input.startsWith('!')) {
+        await this.handleBashCommand(input.slice(1));
+        return;
+      }
+
+      // 优先处理命令
+      if (input.startsWith('/')) {
+        await this.handleCommand(input);
+        return;
+      }
+
+      // 然后尝试让上传器处理可能的文件路径
+      if (await this.uploader.processInput(input)) {
+        // 如果成功识别为文件路径，就不发送给AI
+        return;
+      }
+
+      // 添加到历史记录
+      this.addToHistory(input);
+
+      // 处理AI对话 - ChatGPT风格
+      await this.handleAIMessage(input);
+    } catch (error) {
+      console.log(chalk.red(`❌ 处理输入时发生错误: ${error instanceof Error ? error.message : '未知错误'}`));
+      // 重置多行输入状态
+      this.multiLineBuffer = [];
+      this.isMultiLineMode = false;
+    }
+  }
+
+  private async processFullInput(input: string): Promise<void> {
     // 优先处理命令
     if (input.startsWith('/')) {
       await this.handleCommand(input);
       return;
     }
 
-    // 然后尝试让上传器处理可能的文件路径
-    if (await this.uploader.processInput(input)) {
-      // 如果成功识别为文件路径，就不发送给AI
+    // 处理Bash模式
+    if (input.startsWith('!')) {
+      await this.handleBashCommand(input.slice(1));
       return;
     }
 
-    // 处理AI对话 - ChatGPT风格
+    // 处理AI对话
     await this.handleAIMessage(input);
   }
 
@@ -607,6 +853,30 @@ export class EnhancedCLIInterface {
       // 内存管理
       case 'memory':
         console.log(chalk.cyan('🧠 内存管理功能将在未来版本中实现'));
+        break;
+
+      // 增强交互功能命令
+      case 'history':
+      case 'hist':
+        this.handleShowHistory();
+        break;
+
+      case 'clear-history':
+        this.handleClearHistory();
+        break;
+
+      case 'vim':
+        this.handleToggleVimMode();
+        break;
+
+      case 'multiline':
+      case 'ml':
+        this.handleToggleMultiLineMode();
+        break;
+
+      case 'shortcuts':
+      case 'keys':
+        this.handleShowShortcuts();
         break;
 
       default:
@@ -793,8 +1063,20 @@ export class EnhancedCLIInterface {
     console.log(chalk.white('快捷键:'));
     console.log(chalk.gray('  Ctrl+C                - 中断AI回复/取消输入'));
     console.log(chalk.gray('  Ctrl+D                - 退出程序'));
+    console.log(chalk.gray('  Ctrl+L                - 清屏'));
     console.log(chalk.gray('  上/下箭头              - 命令历史导航'));
-    console.log(chalk.gray('  Tab                   - 命令自动补全 (未来版本)'));
+    console.log(chalk.gray('  Esc+Esc               - 编辑上一条消息'));
+    console.log(chalk.gray('  Shift+Enter           - 多行输入模式'));
+    console.log(chalk.gray('  \\ + Enter             - 换行继续输入'));
+    console.log('');
+
+    console.log(chalk.white('增强功能:'));
+    console.log(chalk.gray('  !命令                  - Bash模式执行shell命令'));
+    console.log(chalk.gray('  /history, /hist       - 查看命令历史'));
+    console.log(chalk.gray('  /clear-history         - 清空命令历史'));
+    console.log(chalk.gray('  /multiline, /ml       - 切换多行输入模式'));
+    console.log(chalk.gray('  /vim                  - 切换Vim编辑模式'));
+    console.log(chalk.gray('  /shortcuts, /keys     - 显示快捷键帮助'));
     console.log('');
 
     console.log(chalk.gray('直接输入消息开始对话，或输入文件路径添加附件'));
@@ -1044,5 +1326,715 @@ export class EnhancedCLIInterface {
 
     const sessionCount = this.sessionManager.getAllSessions().then(sessions => sessions.length);
     return chalk.blue(`会话: ${this.currentSessionId.substring(0, 8)}...`);
+  }
+
+  // 危险的命令列表
+  private readonly DANGEROUS_COMMANDS = [
+    'rm -rf /', 'sudo rm', 'sudo shutdown', 'sudo reboot',
+    'sudo halt', 'sudo poweroff', 'format', 'del /f /s /q',
+    'chmod -R 777 /', 'chown -R', 'dd if=/dev/zero',
+    'mkfs', 'fdisk', 'diskutil', ':(){ :|:& };:',
+    'fork bomb', 'wget http://', 'curl http://',
+    'nc -l', 'ncat -l', 'socat TCP-LISTEN'
+  ];
+
+  // Bash命令处理
+  private async handleBashCommand(command: string): Promise<void> {
+    if (!command.trim()) {
+      console.log(chalk.yellow('💡 Bash模式: 输入shell命令，例如: !ls -la'));
+      return;
+    }
+
+    // 安全检查
+    const trimmedCommand = command.trim().toLowerCase();
+    if (this.DANGEROUS_COMMANDS.some(dangerous => trimmedCommand.includes(dangerous))) {
+      console.log(chalk.red('❌ 检测到危险命令，为安全起见已阻止执行'));
+      console.log(chalk.gray('💡 如需执行此类命令，请直接在终端中运行'));
+      return;
+    }
+
+    // 检查命令复杂度
+    if (command.length > 500) {
+      console.log(chalk.red('❌ 命令过长，请简化或分步执行'));
+      return;
+    }
+
+    console.log(chalk.gray(`\n💻 执行: ${command}`));
+
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      // 检查是否需要后台运行
+      const isBackgroundRun = command.includes(' &') || this.isLongRunningCommand(command);
+
+      if (isBackgroundRun) {
+        // 后台运行命令
+        const cleanCommand = command.replace(/ &$/, '');
+        console.log(chalk.yellow('🔄 后台运行中...'));
+
+        const child = exec(cleanCommand, {
+          cwd: process.cwd(),
+          detached: true,
+          timeout: 60000 // 后台命令1分钟超时
+        });
+
+        child.unref();
+
+        console.log(chalk.green(`✅ 后台任务已启动: PID ${child.pid}`));
+        console.log(chalk.gray('💡 任务将在后台继续运行'));
+      } else {
+        // 前台运行命令
+        const { stdout, stderr } = await execAsync(command, {
+          cwd: process.cwd(),
+          timeout: 30000, // 30秒超时
+          maxBuffer: 1024 * 1024 * 2 // 2MB输出限制
+        });
+
+        if (stdout) {
+          console.log(chalk.white(stdout));
+        }
+
+        if (stderr) {
+          console.log(chalk.red(stderr));
+        }
+
+        console.log(chalk.green(`\n✅ 命令执行完成`));
+      }
+    } catch (error: any) {
+      console.log(chalk.red(`❌ 命令执行失败: ${error.message}`));
+
+      if (error.signal === 'SIGTERM') {
+        console.log(chalk.yellow('⏱️ 命令超时（30秒）'));
+      } else if (error.code === 'ENOENT') {
+        console.log(chalk.yellow('⚠️ 命令未找到，请检查命令是否正确'));
+      } else if (error.code === 'EACCES') {
+        console.log(chalk.yellow('⚠️ 权限不足，请检查权限或使用sudo'));
+      }
+    }
+
+    console.log(''); // 空行分隔
+  }
+
+  // 判断是否为长时间运行的命令
+  private isLongRunningCommand(command: string): boolean {
+    const longRunningCommands = [
+      'npm start', 'npm run dev', 'npm run serve',
+      'yarn start', 'yarn dev',
+      'python -m http.server', 'python -m flask run',
+      'webpack --watch', 'vite',
+      'docker-compose up', 'docker compose up',
+      'ping', 'wget', 'curl',
+      'git clone', 'git pull'
+    ];
+
+    return longRunningCommands.some(cmd => command.includes(cmd));
+  }
+
+  // 增强交互功能命令处理
+  private handleShowHistory(): void {
+    console.log(chalk.cyan('\n📚 命令历史'));
+    console.log(chalk.gray('─'.repeat(50)));
+
+    if (this.commandHistory.length === 0) {
+      console.log(chalk.gray('  暂无命令历史'));
+    } else {
+      this.commandHistory.slice(-20).forEach((cmd, index) => {
+        const num = this.commandHistory.length - 20 + index + 1;
+        console.log(chalk.gray(`${num.toString().padStart(3)}. `) + chalk.white(cmd));
+      });
+    }
+
+    console.log(chalk.gray('─'.repeat(50)));
+    console.log(chalk.white('💡 使用方法:'));
+    console.log(chalk.gray('  上/下箭头键: 导航历史'));
+    console.log(chalk.gray('  Esc+Esc: 编辑上一条命令'));
+    console.log(chalk.gray('  /clear-history: 清空历史'));
+  }
+
+  private handleClearHistory(): void {
+    const count = this.commandHistory.length;
+    this.commandHistory = [];
+    this.historyIndex = -1;
+    console.log(chalk.green(`✅ 已清空 ${count} 条历史记录`));
+  }
+
+  private handleToggleVimMode(): void {
+    this.vimMode = !this.vimMode;
+    if (this.vimMode) {
+      this.vimModeType = 'normal'; // 默认进入Normal模式
+      this.vimBuffer = '';
+      this.vimCursorPos = 0;
+      console.log(chalk.green('✅ Vim模式已启用'));
+      console.log(chalk.gray('📋 基础Vim命令:'));
+      console.log(chalk.gray('  h/j/k/l - 移动光标  w/b - 单词跳转  i/I/a/A - 插入模式'));
+      console.log(chalk.gray('  x/X - 删除字符  dd - 删除行  yy - 复制行  p/P - 粘贴'));
+      console.log(chalk.gray('  Esc - Normal模式  :w - 保存  :q - 退出Vim模式'));
+      console.log(chalk.blue('🎯 当前模式: [NORMAL]'));
+    } else {
+      console.log(chalk.yellow('⚠️ Vim模式已禁用'));
+      this.vimModeType = 'insert';
+    }
+
+    // 重新显示提示符
+    process.stdout.write('\n');
+    this.readline.prompt();
+  }
+
+  private handleToggleMultiLineMode(): void {
+    this.isMultiLineMode = !this.isMultiLineMode;
+    if (this.isMultiLineMode) {
+      console.log(chalk.green('✅ 多行输入模式已启用'));
+      console.log(chalk.gray('💡 输入空行结束多行输入，或使用Shift+Enter换行'));
+    } else {
+      console.log(chalk.yellow('⚠️ 多行输入模式已禁用'));
+    }
+  }
+
+  private handleShowShortcuts(): void {
+    console.log(chalk.cyan('\n⌨️ 键盘快捷键'));
+    console.log(chalk.gray('─'.repeat(80)));
+
+    console.log(chalk.blue('📋 基本快捷键:'));
+    console.log(chalk.gray('  Ctrl+C        : 中断当前操作/取消'));
+    console.log(chalk.gray('  Ctrl+D        : 退出程序'));
+    console.log(chalk.gray('  Ctrl+L        : 清屏'));
+    console.log(chalk.gray('  上/下箭头      : 命令历史导航'));
+    console.log(chalk.gray('  Esc+Esc       : 编辑上一条消息'));
+
+    console.log(chalk.blue('\n📝 多行输入:'));
+    console.log(chalk.gray('  \\ + Enter     : 换行继续输入'));
+    console.log(chalk.gray('  Shift+Enter   : 多行输入模式'));
+    console.log(chalk.gray('  空行          : 结束多行输入'));
+
+    console.log(chalk.blue('\n💻 Bash模式:'));
+    console.log(chalk.gray('  !命令         : 执行shell命令'));
+    console.log(chalk.gray('  !npm start    : 后台运行命令'));
+
+    console.log(chalk.blue('\n🔧 命令模式:'));
+    console.log(chalk.gray('  /vim          : 切换Vim模式'));
+    console.log(chalk.gray('  /multiline    : 切换多行模式'));
+    console.log(chalk.gray('  /history      : 查看命令历史'));
+    console.log(chalk.gray('  /shortcuts    : 显示此帮助'));
+
+    console.log(chalk.green('\n🎯 Vim模式 (输入/vim开启):'));
+
+    console.log(chalk.green.bold('\n    模式切换:'));
+    console.log(chalk.gray('      i           : 进入插入模式'));
+    console.log(chalk.gray('      I           : 在行首插入'));
+    console.log(chalk.gray('      a           : 在光标后插入'));
+    console.log(chalk.gray('      A           : 在行尾插入'));
+    console.log(chalk.gray('      o           : 在下方新建行'));
+    console.log(chalk.gray('      O           : 在上方新建行'));
+    console.log(chalk.gray('      Esc         : 返回普通模式'));
+    console.log(chalk.gray('      v           : 进入可视模式'));
+
+    console.log(chalk.blue.bold('\n    移动命令:'));
+    console.log(chalk.gray('      h           : 左移一个字符'));
+    console.log(chalk.gray('      j           : 下移一行'));
+    console.log(chalk.gray('      k           : 上移一行'));
+    console.log(chalk.gray('      l           : 右移一个字符'));
+    console.log(chalk.gray('      w           : 跳到下一个单词'));
+    console.log(chalk.gray('      b           : 跳到上一个单词'));
+    console.log(chalk.gray('      e           : 跳到单词末尾'));
+    console.log(chalk.gray('      0           : 跳到行首'));
+    console.log(chalk.gray('      $           : 跳到行尾'));
+    console.log(chalk.gray('      ^           : 跳到行首非空字符'));
+
+    console.log(chalk.red.bold('\n    编辑命令:'));
+    console.log(chalk.gray('      x           : 删除当前字符'));
+    console.log(chalk.gray('      X           : 删除前一个字符'));
+    console.log(chalk.gray('      dd          : 删除整行'));
+    console.log(chalk.gray('      cc          : 修改整行'));
+    console.log(chalk.gray('      s           : 删除当前字符并插入'));
+    console.log(chalk.gray('      S           : 删除整行并插入'));
+    console.log(chalk.gray('      yy          : 复制整行'));
+    console.log(chalk.gray('      p           : 在光标后粘贴'));
+    console.log(chalk.gray('      P           : 在光标前粘贴'));
+
+    console.log(chalk.gray('─'.repeat(80)));
+    console.log(chalk.yellow('💡 提示: 在Vim模式下，左下角会显示当前模式状态'));
+  }
+
+  // ==================== Vim模式实现 ====================
+
+  private handleVimKeypress(str: string, key: any): boolean {
+    // 处理Vim模式的特殊键位
+    if (this.vimModeType === 'normal') {
+      return this.handleVimNormalMode(str, key);
+    } else if (this.vimModeType === 'insert') {
+      return this.handleVimInsertMode(str, key);
+    } else if (this.vimModeType === 'visual') {
+      return this.handleVimVisualMode(str, key);
+    }
+    return false;
+  }
+
+  private handleVimNormalMode(str: string, key: any): boolean {
+    // Normal模式下的Vim命令
+    switch (str) {
+      // 移动命令
+      case 'h':
+        this.vimMoveCursor(-1);
+        return true;
+      case 'j':
+        this.vimMoveCursorVertical(1);
+        return true;
+      case 'k':
+        this.vimMoveCursorVertical(-1);
+        return true;
+      case 'l':
+        this.vimMoveCursor(1);
+        return true;
+      case 'w':
+        this.vimMoveToNextWord();
+        return true;
+      case 'b':
+        this.vimMoveToPrevWord();
+        return true;
+      case 'e':
+        this.vimMoveToEndOfWord();
+        return true;
+      case '0':
+        this.vimMoveToStartOfLine();
+        return true;
+      case '$':
+        this.vimMoveToEndOfLine();
+        return true;
+      case '^':
+        this.vimMoveToFirstNonBlank();
+        return true;
+
+      // 编辑命令
+      case 'i':
+        this.vimEnterInsertMode();
+        return true;
+      case 'I':
+        this.vimMoveToFirstNonBlank();
+        this.vimEnterInsertMode();
+        return true;
+      case 'a':
+        this.vimMoveCursor(1);
+        this.vimEnterInsertMode();
+        return true;
+      case 'A':
+        this.vimMoveToEndOfLine();
+        this.vimEnterInsertMode();
+        return true;
+      case 'o':
+        this.vimOpenNewLineBelow();
+        return true;
+      case 'O':
+        this.vimOpenNewLineAbove();
+        return true;
+      case 's':
+        this.vimSubstituteChar();
+        return true;
+      case 'S':
+        this.vimSubstituteLine();
+        return true;
+
+      // 删除命令
+      case 'x':
+        this.vimDeleteChar();
+        return true;
+      case 'X':
+        this.vimDeleteCharBefore();
+        return true;
+      case 'd':
+        this.vimDeleteCommand();
+        return true;
+      case 'c':
+        this.vimChangeCommand();
+        return true;
+      case 'D':
+        this.vimDeleteToEndOfLine();
+        return true;
+      case 'C':
+        this.vimChangeToEndOfLine();
+        return true;
+      case 'dd':
+        this.vimDeleteLine();
+        return true;
+      case 'cc':
+        this.vimChangeLine();
+        return true;
+
+      // 复制粘贴
+      case 'y':
+        this.vimYankCommand();
+        return true;
+      case 'p':
+        this.vimPasteAfter();
+        return true;
+      case 'P':
+        this.vimPasteBefore();
+        return true;
+      case 'yy':
+        this.vimYankLine();
+        return true;
+
+      // 撤销重做 (简化版本)
+      case 'u':
+        this.vimUndo();
+        return true;
+      case 'r':
+        this.vimRedo();
+        return true;
+
+      // 退出和保存
+      case ':':
+        this.vimEnterCommandMode();
+        return true;
+      case '/':
+        this.vimEnterSearchMode();
+        return true;
+      case 'n':
+        this.vimSearchNext();
+        return true;
+      case 'N':
+        this.vimSearchPrev();
+        return true;
+
+      // 其他
+      case '.':
+        this.vimRepeatLastCommand();
+        return true;
+      case 'G':
+        this.vimGoToLineEnd();
+        return true;
+      case 'g':
+        this.vimGoToLineStart();
+        return true;
+    }
+
+    // 处理特殊键
+    if (key.name === 'escape') {
+      return true; // 在Normal模式下Esc不做任何事
+    }
+
+    return false;
+  }
+
+  private handleVimInsertMode(str: string, key: any): boolean {
+    // Insert模式下，大部分按键直接传递给readline
+    // 只有Esc键会退出Insert模式
+    if (key.name === 'escape') {
+      this.vimEnterNormalMode();
+      return true;
+    }
+    return false; // 让其他按键正常处理
+  }
+
+  private handleVimVisualMode(str: string, key: any): boolean {
+    // Visual模式 (简化实现)
+    switch (str) {
+      case 'h':
+      case 'j':
+      case 'k':
+      case 'l':
+      case 'w':
+      case 'b':
+        // 移动选择区域
+        this.vimMoveSelection(str);
+        return true;
+      case 'y':
+        this.vimYankSelection();
+        return true;
+      case 'd':
+        this.vimDeleteSelection();
+        return true;
+      case 'c':
+        this.vimChangeSelection();
+        return true;
+      case 'escape':
+        this.vimEnterNormalMode();
+        return true;
+    }
+    return false;
+  }
+
+  // ==================== Vim模式辅助方法 ====================
+
+  private vimEnterNormalMode(): void {
+    this.vimModeType = 'normal';
+    this.updateVimStatus();
+  }
+
+  private vimEnterInsertMode(): void {
+    this.vimModeType = 'insert';
+    this.updateVimStatus();
+  }
+
+  private vimEnterVisualMode(): void {
+    this.vimModeType = 'visual';
+    this.updateVimStatus();
+  }
+
+  private vimEnterCommandMode(): void {
+    console.log('\n:');
+    // 简化实现：直接处理常见命令
+  }
+
+  private vimEnterSearchMode(): void {
+    console.log('\n/');
+    // 简化实现
+  }
+
+  private updateVimStatus(): void {
+    // 更新提示符显示
+    process.stdout.write('\n');
+    this.readline.prompt();
+  }
+
+  private vimMoveCursor(offset: number): void {
+    this.vimCursorPos = Math.max(0, Math.min(this.vimBuffer.length, this.vimCursorPos + offset));
+    this.redrawVimLine();
+  }
+
+  private vimMoveCursorVertical(direction: number): void {
+    // 简化实现：在单行中垂直移动没有意义
+    // 实际Vim中会在多行间移动
+    this.redrawVimLine();
+  }
+
+  private vimMoveToNextWord(): void {
+    const regex = /\b\w+\b/g;
+    let match;
+    while ((match = regex.exec(this.vimBuffer)) !== null) {
+      if (match.index > this.vimCursorPos) {
+        this.vimCursorPos = match.index;
+        break;
+      }
+    }
+    this.redrawVimLine();
+  }
+
+  private vimMoveToPrevWord(): void {
+    const regex = /\b\w+\b/g;
+    let matches = [];
+    let match;
+    while ((match = regex.exec(this.vimBuffer)) !== null) {
+      matches.push(match);
+    }
+    for (let i = matches.length - 1; i >= 0; i--) {
+      if (matches[i].index < this.vimCursorPos) {
+        this.vimCursorPos = matches[i].index;
+        break;
+      }
+    }
+    this.redrawVimLine();
+  }
+
+  private vimMoveToEndOfWord(): void {
+    const regex = /\b\w+\b/g;
+    let match;
+    while ((match = regex.exec(this.vimBuffer)) !== null) {
+      if (match.index >= this.vimCursorPos) {
+        this.vimCursorPos = match.index + match[0].length - 1;
+        break;
+      }
+    }
+    this.redrawVimLine();
+  }
+
+  private vimMoveToStartOfLine(): void {
+    this.vimCursorPos = 0;
+    this.redrawVimLine();
+  }
+
+  private vimMoveToEndOfLine(): void {
+    this.vimCursorPos = this.vimBuffer.length;
+    this.redrawVimLine();
+  }
+
+  private vimMoveToFirstNonBlank(): void {
+    const match = this.vimBuffer.match(/\S/);
+    this.vimCursorPos = match ? (match.index ?? 0) : 0;
+    this.redrawVimLine();
+  }
+
+  private vimDeleteChar(): void {
+    if (this.vimCursorPos < this.vimBuffer.length) {
+      this.vimBuffer = this.vimBuffer.slice(0, this.vimCursorPos) + this.vimBuffer.slice(this.vimCursorPos + 1);
+      this.redrawVimLine();
+    }
+  }
+
+  private vimDeleteCharBefore(): void {
+    if (this.vimCursorPos > 0) {
+      this.vimBuffer = this.vimBuffer.slice(0, this.vimCursorPos - 1) + this.vimBuffer.slice(this.vimCursorPos);
+      this.vimCursorPos--;
+      this.redrawVimLine();
+    }
+  }
+
+  private vimDeleteLine(): void {
+    this.vimLastYank = this.vimBuffer;
+    this.vimBuffer = '';
+    this.vimCursorPos = 0;
+    this.redrawVimLine();
+  }
+
+  private vimYankLine(): void {
+    this.vimLastYank = this.vimBuffer;
+    console.log(chalk.green(`\n已复制行: ${this.vimBuffer}`));
+  }
+
+  private vimPasteAfter(): void {
+    if (this.vimLastYank) {
+      this.vimBuffer = this.vimBuffer.slice(0, this.vimCursorPos + 1) + this.vimLastYank + this.vimBuffer.slice(this.vimCursorPos + 1);
+      this.vimCursorPos += this.vimLastYank.length;
+      this.redrawVimLine();
+    }
+  }
+
+  private vimPasteBefore(): void {
+    if (this.vimLastYank) {
+      this.vimBuffer = this.vimBuffer.slice(0, this.vimCursorPos) + this.vimLastYank + this.vimBuffer.slice(this.vimCursorPos);
+      this.vimCursorPos += this.vimLastYank.length;
+      this.redrawVimLine();
+    }
+  }
+
+  private vimOpenNewLineBelow(): void {
+    this.vimBuffer += '\n';
+    this.vimCursorPos = this.vimBuffer.length;
+    this.vimEnterInsertMode();
+    this.redrawVimLine();
+  }
+
+  private vimOpenNewLineAbove(): void {
+    this.vimBuffer = '\n' + this.vimBuffer;
+    this.vimCursorPos = 0;
+    this.vimEnterInsertMode();
+    this.redrawVimLine();
+  }
+
+  private vimSubstituteChar(): void {
+    if (this.vimCursorPos < this.vimBuffer.length) {
+      this.vimBuffer = this.vimBuffer.slice(0, this.vimCursorPos) + ' ' + this.vimBuffer.slice(this.vimCursorPos + 1);
+      this.vimEnterInsertMode();
+      this.redrawVimLine();
+    }
+  }
+
+  private vimSubstituteLine(): void {
+    this.vimBuffer = '';
+    this.vimCursorPos = 0;
+    this.vimEnterInsertMode();
+    this.redrawVimLine();
+  }
+
+  private vimDeleteToEndOfLine(): void {
+    this.vimLastYank = this.vimBuffer.slice(this.vimCursorPos);
+    this.vimBuffer = this.vimBuffer.slice(0, this.vimCursorPos);
+    this.redrawVimLine();
+  }
+
+  private vimChangeToEndOfLine(): void {
+    this.vimLastYank = this.vimBuffer.slice(this.vimCursorPos);
+    this.vimBuffer = this.vimBuffer.slice(0, this.vimCursorPos);
+    this.vimEnterInsertMode();
+    this.redrawVimLine();
+  }
+
+  private vimDeleteCommand(): void {
+    // 简化实现：等待下一个字符
+    console.log(chalk.yellow('等待删除命令 (如: dw, dd, d$)'));
+  }
+
+  private vimChangeCommand(): void {
+    // 简化实现：等待下一个字符
+    console.log(chalk.yellow('等待修改命令 (如: cw, cc, c$)'));
+  }
+
+  private vimYankCommand(): void {
+    // 简化实现：等待下一个字符
+    console.log(chalk.yellow('等待复制命令 (如: yw, yy)'));
+  }
+
+  private vimChangeLine(): void {
+    this.vimLastYank = this.vimBuffer;
+    this.vimBuffer = '';
+    this.vimCursorPos = 0;
+    this.vimEnterInsertMode();
+    this.redrawVimLine();
+  }
+
+  private vimMoveSelection(direction: string): void {
+    // Visual模式选择移动 (简化实现)
+    console.log(chalk.yellow(`Visual模式移动: ${direction}`));
+  }
+
+  private vimYankSelection(): void {
+    console.log(chalk.green('已复制选择内容'));
+    this.vimEnterNormalMode();
+  }
+
+  private vimDeleteSelection(): void {
+    console.log(chalk.red('已删除选择内容'));
+    this.vimEnterNormalMode();
+  }
+
+  private vimChangeSelection(): void {
+    console.log(chalk.yellow('已修改选择内容'));
+    this.vimEnterInsertMode();
+  }
+
+  private vimUndo(): void {
+    // 简化实现：撤销功能需要更复杂的状态管理
+    console.log(chalk.yellow('撤销功能 (简化实现)'));
+  }
+
+  private vimRedo(): void {
+    // 简化实现
+    console.log(chalk.yellow('重做功能 (简化实现)'));
+  }
+
+  private vimSearchNext(): void {
+    console.log(chalk.yellow('搜索下一个'));
+  }
+
+  private vimSearchPrev(): void {
+    console.log(chalk.yellow('搜索上一个'));
+  }
+
+  private vimRepeatLastCommand(): void {
+    console.log(chalk.yellow('重复最后命令'));
+  }
+
+  private vimGoToLineEnd(): void {
+    this.vimCursorPos = this.vimBuffer.length;
+    this.redrawVimLine();
+  }
+
+  private vimGoToLineStart(): void {
+    this.vimCursorPos = 0;
+    this.redrawVimLine();
+  }
+
+  private redrawVimLine(): void {
+    // 清除当前行并重新绘制
+    process.stdout.write('\x1b[2K\r'); // 清除行
+    const beforeCursor = this.vimBuffer.slice(0, this.vimCursorPos);
+    const atCursor = this.vimBuffer[this.vimCursorPos] || ' ';
+    const afterCursor = this.vimBuffer.slice(this.vimCursorPos + 1);
+
+    // 在Vim模式下显示光标位置
+    const cursor = this.vimModeType === 'normal' ?
+      chalk.bgBlue(atCursor) :
+      atCursor;
+
+    process.stdout.write(this.buildPrompt() + beforeCursor + cursor + afterCursor);
+  }
+
+  private updateVimBufferFromReadline(): void {
+    // 同步readline的输入到Vim buffer
+    if (this.readline && this.readline.line !== undefined) {
+      this.vimBuffer = this.readline.line;
+      this.vimCursorPos = this.readline.cursor || 0;
+    }
   }
 }

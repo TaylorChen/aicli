@@ -6,6 +6,34 @@ import { UpdateManager } from './core/update-manager';
 import { MCPManager } from './core/mcp-manager';
 import chalk from 'chalk';
 
+// 模型别名解析
+function resolveModelAlias(alias: string): string {
+  const modelAliases: Record<string, string> = {
+    // DeepSeek 模型别名
+    'sonnet': 'deepseek-chat',
+    'opus': 'deepseek-reasoner',
+    'haiku': 'deepseek-coder',
+    'default': 'deepseek-chat',
+    'chat': 'deepseek-chat',
+    'reasoner': 'deepseek-reasoner',
+    'coder': 'deepseek-coder',
+
+    // OpenAI 模型别名
+    'gpt-4': 'gpt-4-turbo-preview',
+    'gpt-3.5': 'gpt-3.5-turbo',
+    'gpt4': 'gpt-4-turbo-preview',
+    'gpt35': 'gpt-3.5-turbo',
+
+    // Claude 模型别名
+    'claude-3': 'claude-3-sonnet-20240229',
+    'claude-opus': 'claude-3-opus-20240229',
+    'claude-sonnet': 'claude-3-sonnet-20240229',
+    'claude-haiku': 'claude-3-haiku-20240307'
+  };
+
+  return modelAliases[alias.toLowerCase()] || alias;
+}
+
 interface ProgramOptions {
   provider?: 'deepseek' | 'openai' | 'claude';
   apiKey?: string;
@@ -25,6 +53,7 @@ interface ProgramOptions {
   verbose?: boolean;
   continue?: boolean;
   resume?: string;
+  showSessions?: boolean;
   allowedTools?: string;
   disallowedTools?: string;
   addDir?: string[];
@@ -58,7 +87,7 @@ function parseArguments(): ProgramOptions {
 
       case '--model':
       case '-m':
-        options.model = args[++i];
+        options.model = resolveModelAlias(args[++i]);
         break;
 
       case '--base-url':
@@ -136,6 +165,11 @@ function parseArguments(): ProgramOptions {
         options.resume = args[++i];
         break;
 
+      // 交互式会话选择
+      case '--sessions':
+        options.showSessions = true;
+        break;
+
       // 权限和工具控制
       case '--allowedTools':
         options.allowedTools = args[++i];
@@ -205,7 +239,7 @@ function displayHelp(): void {
 基本选项:
   -p, --provider <provider>    AI提供商 (deepseek, openai, claude) [默认: deepseek]
   -k, --api-key <key>         API密钥 [默认: 从环境变量读取]
-  -m, --model <model>         模型名称
+  -m, --model <model>         模型名称 [支持别名: sonnet, opus, haiku, gpt-4, claude-3等]
   -u, --base-url <url>        API基础URL
   -h, --help                  显示帮助信息
 
@@ -220,6 +254,7 @@ function displayHelp(): void {
 会话管理:
   --continue, -c              继续最近的对话
   --resume, -r <id> [query]   通过ID恢复会话
+  --sessions                  显示所有会话历史
   --query <text>              直接查询（与--print一起使用）
 
 权限控制:
@@ -242,6 +277,13 @@ function displayHelp(): void {
 系统命令:
   update                      更新到最新版本
   mcp [action] [server]       MCP服务器管理
+
+模型别名:
+  DeepSeek: sonnet→deepseek-chat, opus→deepseek-reasoner, haiku→deepseek-coder
+  OpenAI: gpt-4→gpt-4-turbo-preview, gpt-3.5→gpt-3.5-turbo
+  Claude: claude-3→claude-3-sonnet, claude-opus→claude-3-opus, claude-haiku→claude-3-haiku
+
+MCP子命令:
     list                      列出所有MCP服务器
     start [server]            启动服务器
     stop [server]             停止服务器
@@ -290,6 +332,7 @@ function displayHelp(): void {
   aicli --continue              # 继续最近对话
   aicli -c "继续上次讨论"       # 继续对话并发送消息
   aicli --resume abc123 "完成这个任务"  # 恢复特定会话
+  aicli --sessions              # 查看所有会话历史
 
   # 高级功能
   aicli --print --max-turns 3 "简单回答"
@@ -523,6 +566,66 @@ async function handleMCPCommand(options: ProgramOptions): Promise<void> {
   }
 }
 
+async function handleShowSessionsCommand(): Promise<void> {
+  try {
+    const { SessionManagerV3 } = await import('./core/session-manager-v3');
+    const sessionManager = new SessionManagerV3();
+    const sessions = await sessionManager.getAllSessions();
+
+    if (sessions.length === 0) {
+      console.log(chalk.yellow('📝 暂无会话历史'));
+      console.log(chalk.gray('开始新的对话来创建会话历史'));
+      return;
+    }
+
+    console.log(chalk.cyan(`\n📝 会话历史 (${sessions.length}个会话)`));
+    console.log(chalk.gray('─'.repeat(80)));
+
+    // 按最后更新时间排序
+    const sortedSessions = sessions.sort((a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+
+    sortedSessions.forEach((session, index) => {
+      const createdTime = new Date(session.createdAt).toLocaleString();
+      const updatedTime = new Date(session.updatedAt).toLocaleString();
+      const modelInfo = `${session.provider}/${session.model}`;
+      const messageCount = session.messages.length;
+
+      // 显示会话ID的前8位
+      const shortId = session.id.substring(0, 8);
+
+      console.log(`${chalk.cyan((index + 1).toString() + '.')} ${chalk.white(session.title)}`);
+      console.log(`   ID: ${chalk.gray(shortId)}... | 模型: ${chalk.blue(modelInfo)} | 消息: ${chalk.green(messageCount.toString())}`);
+      console.log(`   创建: ${chalk.gray(createdTime)} | 更新: ${chalk.gray(updatedTime)}`);
+
+      // 显示最后一条用户消息的预览
+      const lastUserMessage = session.messages
+        .filter(msg => msg.role === 'user')
+        .pop();
+
+      if (lastUserMessage) {
+        const preview = lastUserMessage.content.length > 50
+          ? lastUserMessage.content.substring(0, 50) + '...'
+          : lastUserMessage.content;
+        console.log(`   预览: ${chalk.gray(preview)}`);
+      }
+
+      console.log('');
+    });
+
+    console.log(chalk.gray('─'.repeat(80)));
+    console.log(chalk.white('💡 使用方法:'));
+    console.log(chalk.gray('  继续最近对话: aicli --continue'));
+    console.log(chalk.gray('  恢复特定会话: aicli --resume <会话ID>'));
+    console.log(chalk.gray('  查看会话详情: aicli --resume <会话ID> --status'));
+
+  } catch (error) {
+    console.error(chalk.red(`❌ 显示会话列表失败: ${error instanceof Error ? error.message : '未知错误'}`));
+    process.exit(1);
+  }
+}
+
 async function main(): Promise<void> {
   try {
     const options = parseArguments();
@@ -540,6 +643,12 @@ async function main(): Promise<void> {
 
     if (options.mcp) {
       await handleMCPCommand(options);
+      return;
+    }
+
+    // 处理会话列表显示
+    if (options.showSessions) {
+      await handleShowSessionsCommand();
       return;
     }
 
