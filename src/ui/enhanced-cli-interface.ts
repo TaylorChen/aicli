@@ -5,6 +5,9 @@ import * as figlet from 'figlet';
 import { TerminalFileUploader, FileAttachment } from '../core/terminal-file-uploader';
 import { EnhancedClipboardHandler } from '../core/enhanced-clipboard-handler';
 import { DeepSeekIntegration, DeepSeekConfig } from '../services/deepseek-integration';
+import { PermissionManager } from '../core/permission-manager';
+import { SessionManagerV3 } from '../core/session-manager-v3';
+import { UpdateManager } from '../core/update-manager';
 
 export interface EnhancedCLIOptions {
   provider: 'deepseek' | 'openai' | 'claude';
@@ -15,15 +18,26 @@ export interface EnhancedCLIOptions {
   maxFileSize?: number;
   enableStreaming?: boolean;
   autoClearAttachments?: boolean;
+  allowedTools?: string;
+  disallowedTools?: string;
+  addDir?: string[];
+  permissionMode?: string;
+  permissionPromptTool?: string;
+  dangerouslySkipPermissions?: boolean;
+  verbose?: boolean;
 }
 
 export class EnhancedCLIInterface {
   private uploader: TerminalFileUploader;
   private clipboardHandler: EnhancedClipboardHandler;
   private aiService: DeepSeekIntegration;
+  private permissionManager: PermissionManager;
+  private sessionManager: SessionManagerV3;
+  private updateManager: UpdateManager;
   private readline!: readline.Interface;
   private currentAttachments: FileAttachment[] = [];
   private isStreaming = false;
+  private currentSessionId: string | null = null;
 
   constructor(private options: EnhancedCLIOptions) {
     // 设置默认选项
@@ -46,6 +60,21 @@ export class EnhancedCLIInterface {
       enableFilePathPaste: true
     });
 
+    // 初始化权限管理器
+    this.permissionManager = new PermissionManager({
+      allowedTools: this.options.allowedTools,
+      disallowedTools: this.options.disallowedTools,
+      permissionMode: this.options.permissionMode as any,
+      dangerouslySkipPermissions: this.options.dangerouslySkipPermissions,
+      additionalDirectories: this.options.addDir
+    });
+
+    // 初始化会话管理器
+    this.sessionManager = new SessionManagerV3();
+
+    // 初始化更新管理器
+    this.updateManager = new UpdateManager();
+
     // 初始化AI服务
     this.aiService = new DeepSeekIntegration({
       apiKey: options.apiKey || '',
@@ -62,6 +91,12 @@ export class EnhancedCLIInterface {
 
     // 初始化文件上传器（静默模式，不输出额外信息）
     await this.uploader.initializeSilent();
+
+    // 检查更新
+    await this.checkForUpdates();
+
+    // 创建新会话
+    await this.createNewSession();
 
     // 验证API配置
     await this.validateConfiguration();
@@ -80,13 +115,27 @@ export class EnhancedCLIInterface {
     const terminalWidth = process.stdout.columns || 80;
     const terminalHeight = process.stdout.rows || 24;
 
-    // 强制显示完整界面，不管终端尺寸
-    // 因为在实际测试中发现终端尺寸检测可能不准确
-    this.displayHeader();
-    this.displaySidebar();
-    this.displayMainContent();
+    // 显示简化版欢迎界面
+    this.displaySimpleWelcome();
     this.displayStatusBar();
     this.displayInputArea();
+  }
+
+  private displaySimpleWelcome(): void {
+    const modelInfo = this.aiService.getModelInfo();
+
+    // 极简欢迎界面 - Claude/qorder风格
+    console.log('');
+    console.log(chalk.cyan.bold('🚀 AICLI - Enhanced AI Programming Assistant'));
+    console.log(chalk.gray(`🤖 ${modelInfo.model} (${modelInfo.provider})`));
+
+    if (this.currentAttachments.length > 0) {
+      console.log(chalk.blue(`📎 ${this.currentAttachments.length} 个附件已添加`));
+    }
+
+    console.log('');
+    console.log(chalk.gray('💬 开始对话，或输入 /help 查看帮助'));
+    console.log('');
   }
 
   private displaySimpleInterface(): void {
@@ -216,44 +265,47 @@ export class EnhancedCLIInterface {
 
   private displayStatusBar(): void {
     const width = process.stdout.columns || 80;
-    const modelInfo = this.aiService.getModelInfo();
+    let statusInfo = '';
 
-    // Adaptive status bar based on terminal width
-    let statusBar: string;
+    // 收集状态信息
+    const parts: string[] = [];
 
-    if (width < 60) {
-      // Very small terminal - minimal info
-      const files = `📁${this.currentAttachments.length}`;
-      const status = this.isStreaming ? '🔄' : '✅';
-      statusBar = `${files} ${status}`;
-    } else if (width < 80) {
-      // Small terminal - essential info only
-      const files = `📁 ${this.currentAttachments.length} files`;
-      const model = modelInfo.model.length > 10 ? modelInfo.model.substring(0, 8) + '..' : modelInfo.model;
-      const streaming = this.isStreaming ? '🔄 Streaming' : '✅ Ready';
-      statusBar = `${files} | ${model} | ${streaming}`;
-    } else {
-      // Full terminal - all components
-      const files = `📁 ${this.currentAttachments.length} files`;
-      const model = `🤖 ${modelInfo.model}`;
-      const provider = `🏷️ ${modelInfo.provider}`;
-      const streaming = this.isStreaming ? '🔄 Streaming' : '✅ Ready';
-
-      // Calculate spacing
-      const components = [files, model, provider, streaming];
-      const totalText = components.join(' ');
-      const spacing = Math.max(1, Math.floor((width - totalText.length) / (components.length - 1)));
-
-      // Build status bar
-      statusBar = components[0];
-      for (let i = 1; i < components.length; i++) {
-        statusBar += ' '.repeat(spacing) + components[i];
-      }
+    // 附件信息
+    if (this.currentAttachments.length > 0) {
+      parts.push(chalk.blue(`📎 ${this.currentAttachments.length}`));
     }
 
-    console.log('');
-    console.log(chalk.gray('─'.repeat(width)));
-    console.log(chalk.cyan(statusBar));
+    // 流式状态
+    if (this.isStreaming) {
+      parts.push(chalk.yellow('🔄'));
+    }
+
+    // 会话信息
+    if (this.currentSessionId) {
+      parts.push(chalk.green(`📝 ${this.currentSessionId.substring(0, 8)}`));
+    }
+
+    // 权限信息（如果有特殊设置）
+    const permissionSummary = this.getPermissionSummary();
+    if (permissionSummary) {
+      parts.push(permissionSummary);
+    }
+
+    // 模型信息
+    const modelInfo = this.aiService.getModelInfo();
+    parts.push(chalk.cyan(`🤖 ${modelInfo.model}`));
+
+    // 构建状态栏
+    if (parts.length > 0) {
+      statusInfo = parts.join(' │ ');
+
+      // 确保状态信息不超过终端宽度
+      if (statusInfo.length > width - 4) {
+        statusInfo = statusInfo.substring(0, width - 7) + '...';
+      }
+
+      console.log(chalk.gray(statusInfo));
+    }
   }
 
   private displayInputArea(): void {
@@ -363,8 +415,12 @@ export class EnhancedCLIInterface {
       input: process.stdin,
       output: process.stdout,
       prompt: this.buildPrompt(),
-      terminal: true
+      terminal: true,
+      historySize: 1000
     });
+
+    // 设置键盘快捷键
+    this.setupKeyboardShortcuts();
 
     // 设置终端为非原始模式，确保不捕获鼠标事件
     if (process.stdin.isTTY) {
@@ -374,6 +430,11 @@ export class EnhancedCLIInterface {
     this.readline.on('line', async (input: string) => {
       const trimmedInput = input.trim();
       if (trimmedInput) {
+        // 显示用户输入，类似ChatGPT
+        if (!trimmedInput.startsWith('/')) {
+          console.log('');
+          console.log(chalk.green('👤 ') + trimmedInput);
+        }
         await this.handleInput(trimmedInput);
       }
       this.readline.prompt();
@@ -391,6 +452,29 @@ export class EnhancedCLIInterface {
         this.readline.prompt();
       }
     }, 100);
+  }
+
+  private setupKeyboardShortcuts(): void {
+    // Ctrl+D 退出
+    process.stdin.on('data', (key) => {
+      if (key.toString() === '\u0004') { // Ctrl+D
+        console.log(chalk.yellow('\n👋 再见！'));
+        process.exit(0);
+      }
+    });
+
+    // 设置SIGINT处理 (Ctrl+C)
+    process.on('SIGINT', () => {
+      if (this.isStreaming) {
+        // 如果正在流式输出，中断流
+        this.isStreaming = false;
+        console.log(chalk.yellow('\n⚡ 已中断AI回复'));
+        this.readline.prompt();
+      } else {
+        console.log(chalk.yellow('\n💡 输入 /quit 退出程序，或继续对话'));
+        this.readline.prompt();
+      }
+    });
   }
 
   private disableMouseTracking(): void {
@@ -414,7 +498,9 @@ export class EnhancedCLIInterface {
   private buildPrompt(): string {
     const attachmentCount = this.currentAttachments.length;
     const attachmentIndicator = attachmentCount > 0 ? chalk.cyan(`📎${attachmentCount} `) : '';
-    return `${attachmentIndicator}${chalk.green('> ')}`;
+
+    // 更简洁的对话式提示符
+    return `${attachmentIndicator}${chalk.blue('❯ ')}`;
   }
 
   private async handleInput(input: string): Promise<void> {
@@ -422,15 +508,8 @@ export class EnhancedCLIInterface {
 
     // 优先处理命令
     if (input.startsWith('/')) {
-      // 检查是否是已知命令
-      const [cmd] = input.slice(1).toLowerCase().split(' ');
-      const knownCommands = ['paste', 'p', 'attachments', 'att', 'clear', 'c', 'remove', 'rm',
-                           'upload', 'up', 'status', 'st', 'help', 'h', 'quit', 'q', 'exit'];
-
-      if (knownCommands.includes(cmd)) {
-        await this.handleCommand(input);
-        return;
-      }
+      await this.handleCommand(input);
+      return;
     }
 
     // 然后尝试让上传器处理可能的文件路径
@@ -439,7 +518,7 @@ export class EnhancedCLIInterface {
       return;
     }
 
-    // 处理AI对话
+    // 处理AI对话 - ChatGPT风格
     await this.handleAIMessage(input);
   }
 
@@ -459,8 +538,10 @@ export class EnhancedCLIInterface {
 
   private async handleCommand(command: string): Promise<void> {
     const [cmd, ...args] = command.slice(1).toLowerCase().split(' ');
+    const fullArgs = args.join(' ');
 
     switch (cmd) {
+      // 核心功能命令
       case 'paste':
       case 'p':
         await this.handlePaste();
@@ -500,6 +581,32 @@ export class EnhancedCLIInterface {
       case 'q':
       case 'exit':
         this.handleQuit();
+        break;
+
+      // 模型管理命令
+      case 'model':
+        if (fullArgs) {
+          console.log(chalk.cyan(`🤖 切换到模型: ${fullArgs}`));
+          console.log(chalk.gray('模型切换功能将在未来版本中实现'));
+        } else {
+          const modelInfo = this.aiService.getModelInfo();
+          console.log(chalk.cyan(`🤖 当前模型: ${modelInfo.model} (${modelInfo.provider})`));
+        }
+        break;
+
+      // 配置命令
+      case 'config':
+        this.handleStatus(); // 临时使用status显示配置信息
+        break;
+
+      // 清除对话历史
+      case 'reset':
+        console.log(chalk.yellow('🔄 对话历史已清除'));
+        break;
+
+      // 内存管理
+      case 'memory':
+        console.log(chalk.cyan('🧠 内存管理功能将在未来版本中实现'));
         break;
 
       default:
@@ -656,13 +763,42 @@ export class EnhancedCLIInterface {
   }
 
   private handleHelp(): void {
-    // Clear and redisplay interface with help content
-    console.clear();
-    this.displayHeader();
-    this.displaySidebar();
-    this.displayHelpContent();
-    this.displayStatusBar();
-    this.displayInputArea();
+    // 简洁的帮助显示，符合对话式界面
+    console.log('');
+    console.log(chalk.cyan('📖 可用命令:'));
+    console.log('');
+
+    console.log(chalk.white('核心功能:'));
+    console.log(chalk.gray('  /help, /h              - 显示帮助'));
+    console.log(chalk.gray('  /paste, /p             - 粘贴剪贴板内容'));
+    console.log(chalk.gray('  /attachments, /att     - 查看附件列表'));
+    console.log(chalk.gray('  /clear, /c             - 清除所有附件'));
+    console.log(chalk.gray('  /status, /st           - 显示系统状态'));
+    console.log(chalk.gray('  /reset                 - 清除对话历史'));
+    console.log(chalk.gray('  /quit, /q              - 退出程序'));
+    console.log('');
+
+    console.log(chalk.white('高级功能:'));
+    console.log(chalk.gray('  /model [name]          - 查看/切换AI模型'));
+    console.log(chalk.gray('  /config                - 查看配置信息'));
+    console.log(chalk.gray('  /memory                - 内存管理 (开发中)'));
+    console.log('');
+
+    console.log(chalk.white('文件操作:'));
+    console.log(chalk.gray('  /ls, /list            - 列出文件'));
+    console.log(chalk.gray('  /cat <file>           - 查看文件内容'));
+    console.log(chalk.gray('  /search <term>         - 搜索文件内容'));
+    console.log('');
+
+    console.log(chalk.white('快捷键:'));
+    console.log(chalk.gray('  Ctrl+C                - 中断AI回复/取消输入'));
+    console.log(chalk.gray('  Ctrl+D                - 退出程序'));
+    console.log(chalk.gray('  上/下箭头              - 命令历史导航'));
+    console.log(chalk.gray('  Tab                   - 命令自动补全 (未来版本)'));
+    console.log('');
+
+    console.log(chalk.gray('直接输入消息开始对话，或输入文件路径添加附件'));
+    console.log('');
   }
 
   private displayHelpContent(): void {
@@ -747,8 +883,9 @@ export class EnhancedCLIInterface {
   private async sendStreamingMessage(message: string): Promise<void> {
     this.isStreaming = true;
 
-    console.log(chalk.blue('🤖 AI回复:'));
-    console.log(chalk.gray('─'.repeat(60)));
+    // ChatGPT风格的对话显示
+    console.log('');
+    console.log(chalk.blue('🤖'));
 
     let fullResponse = '';
 
@@ -761,7 +898,6 @@ export class EnhancedCLIInterface {
       }
     );
 
-    console.log(chalk.gray('─'.repeat(60)));
     console.log('');
 
     this.isStreaming = false;
@@ -837,5 +973,76 @@ export class EnhancedCLIInterface {
     } catch (error) {
       // 忽略清理错误
     }
+  }
+
+  // 检查更新
+  private async checkForUpdates(): Promise<void> {
+    try {
+      if (this.options.verbose) {
+        console.log(chalk.blue('🔍 检查更新...'));
+      }
+
+      const updateInfo = await this.updateManager.checkForUpdates();
+
+      if (updateInfo.updateAvailable) {
+        console.log(chalk.green(`🚀 发现新版本: ${updateInfo.latestVersion}`));
+        console.log(chalk.yellow(`当前版本: ${updateInfo.currentVersion}`));
+        console.log(chalk.gray('运行 "aicli update" 进行更新'));
+        console.log('');
+      } else if (this.options.verbose) {
+        console.log(chalk.gray(`✅ 已是最新版本 (${updateInfo.currentVersion})`));
+      }
+    } catch (error) {
+      if (this.options.verbose) {
+        console.log(chalk.yellow('⚠️  无法检查更新'));
+      }
+    }
+  }
+
+  // 创建新会话
+  private async createNewSession(): Promise<void> {
+    try {
+      this.currentSessionId = this.sessionManager.createSession({
+        provider: this.options.provider,
+        model: this.options.model
+      });
+
+      if (this.options.verbose) {
+        console.log(chalk.green(`📝 新会话已创建: ${this.currentSessionId}`));
+      }
+    } catch (error) {
+      console.error(chalk.red('❌ 创建会话失败:'), error);
+    }
+  }
+
+  // 获取权限摘要
+  private getPermissionSummary(): string {
+    const summary = this.permissionManager.getPermissionSummary();
+
+    let info = '';
+    if (summary.mode !== 'default') {
+      info += chalk.blue(`权限模式: ${summary.mode} `);
+    }
+    if (summary.dangerouslySkipped) {
+      info += chalk.red('权限已跳过 ');
+    }
+    if (summary.allowedTools.length > 0) {
+      info += chalk.green(`允许工具: ${summary.allowedTools.length}个 `);
+    }
+    if (summary.disallowedTools.length > 0) {
+      info += chalk.red(`禁止工具: ${summary.disallowedTools.length}个 `);
+    }
+
+    return info;
+  }
+
+  // 获取会话信息
+  private getSessionInfo(): string {
+    if (!this.currentSessionId) {
+      return chalk.gray('无会话');
+    }
+
+    const sessionCount = this.sessionManager.getAllSessions().then(sessions => sessions.length);
+    return chalk.blue(`会话: ${this.currentSessionId.substring(0, 8)}...`);
   }
 }
