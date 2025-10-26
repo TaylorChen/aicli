@@ -744,15 +744,36 @@ export class EnhancedCLIInterface {
         return;
       }
 
-      // 优先处理命令
+      // 检查是否是斜杠开头的输入
       if (input.startsWith('/')) {
+        // 先判断是否是已知的命令
+        const cmdName = input.slice(1).split(' ')[0].toLowerCase();
+        const knownCommands = [
+          'paste', 'p', 'attachments', 'att', 'clear', 'c', 'remove', 'rm',
+          'upload', 'up', 'status', 'st', 'help', 'h', 'quit', 'q', 'exit',
+          'vim', 'history', 'hist', 'shortcuts', 'keys', 'multiline', 'ml',
+          'bash', 'cd', 'ls', 'pwd', 'cat', 'grep', 'find', 'tree', 'files',
+          'search', 'provider', 'model', 'config', 'reset', 'session', 'sessions'
+        ];
+        
+        if (knownCommands.includes(cmdName)) {
+          // 是已知命令，直接处理
+          await this.handleCommand(input);
+          return;
+        }
+        
+        // 不是已知命令，可能是文件路径，让uploader尝试处理
+        if (await this.uploader.processInput(input)) {
+          return;
+        }
+        
+        // 既不是已知命令也不是有效文件路径，当作未知命令处理
         await this.handleCommand(input);
         return;
       }
 
-      // 然后尝试让上传器处理可能的文件路径
+      // 对于不以斜杠开头的输入，检查是否是文件路径
       if (await this.uploader.processInput(input)) {
-        // 如果成功识别为文件路径，就不发送给AI
         return;
       }
 
@@ -770,8 +791,30 @@ export class EnhancedCLIInterface {
   }
 
   private async processFullInput(input: string): Promise<void> {
-    // 优先处理命令
+    // 检查是否是斜杠开头的输入
     if (input.startsWith('/')) {
+      // 先判断是否是已知的命令
+      const cmdName = input.slice(1).split(' ')[0].toLowerCase();
+      const knownCommands = [
+        'paste', 'p', 'attachments', 'att', 'clear', 'c', 'remove', 'rm',
+        'upload', 'up', 'status', 'st', 'help', 'h', 'quit', 'q', 'exit',
+        'vim', 'history', 'hist', 'shortcuts', 'keys', 'multiline', 'ml',
+        'bash', 'cd', 'ls', 'pwd', 'cat', 'grep', 'find', 'tree', 'files',
+        'search', 'provider', 'model', 'config', 'reset', 'session', 'sessions'
+      ];
+      
+      if (knownCommands.includes(cmdName)) {
+        // 是已知命令，直接处理
+        await this.handleCommand(input);
+        return;
+      }
+      
+      // 不是已知命令，可能是文件路径
+      if (await this.uploader.processInput(input)) {
+        return;
+      }
+      
+      // 既不是已知命令也不是有效文件路径
       await this.handleCommand(input);
       return;
     }
@@ -779,6 +822,11 @@ export class EnhancedCLIInterface {
     // 处理Bash模式
     if (input.startsWith('!')) {
       await this.handleBashCommand(input.slice(1));
+      return;
+    }
+
+    // 对于不以斜杠开头的输入，检查是否是文件路径
+    if (await this.uploader.processInput(input)) {
       return;
     }
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
-// 增强版 AICLI 统一启动入口
+// AICLI 现代化统一入口
 const { spawn } = require('child_process');
 const path = require('path');
 
 // 获取当前脚本目录
 const scriptDir = path.dirname(__filename);
-const enhancedCli = path.join(scriptDir, '..', 'dist', 'enhanced-index.js');
+const modernCli = path.join(scriptDir, '..', 'dist', 'modern-cli.js');
 
-// 启动增强版 AICLI
-const child = spawn('node', [enhancedCli, ...process.argv.slice(2)], {
+// 启动现代化 AICLI
+const child = spawn('node', [modernCli, ...process.argv.slice(2)], {
   stdio: 'inherit',
   cwd: process.cwd(),
   env: process.env
@@ -20,6 +20,6 @@ child.on('exit', (code) => {
 });
 
 child.on('error', (err) => {
-  console.error('启动失败:', err);
+  console.error('Failed to start:', err);
   process.exit(1);
 });
