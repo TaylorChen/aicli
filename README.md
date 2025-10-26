@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/version-2.4.4-blue.svg)](https://github.com/yourusername/aicli)
+[![Version](https://img.shields.io/badge/version-2.4.4-blue.svg)](https://github.com/TaylorChen/aicli)
 [![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
@@ -214,7 +214,7 @@ npm install -g aicli
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/aicli.git
+git clone https://github.com/TaylorChen/aicli.git
 cd aicli
 
 # 安装依赖
@@ -1057,7 +1057,7 @@ aicli/
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/aicli.git
+git clone https://github.com/TaylorChen/aicli.git
 cd aicli
 
 # 安装依赖
@@ -1230,9 +1230,9 @@ MIT License - 详见 [LICENSE](./LICENSE) 文件
 
 ## 📞 联系方式
 
-- GitHub: [@yourusername](https://github.com/yourusername)
+- GitHub: [@TaylorChen](https://github.com/TaylorChen)
 - Email: your.email@example.com
-- Issues: [GitHub Issues](https://github.com/yourusername/aicli/issues)
+- Issues: [GitHub Issues](https://github.com/TaylorChen/aicli/issues)
 
 ---
 
