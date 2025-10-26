@@ -1,324 +1,343 @@
-import { smartConfig } from './smart-config';
-import { CommandHistory } from './command-history';
+/**
+ * 智能补全系统
+ * 提供Tab键补全、智能建议等功能
+ */
 
-export interface CompletionItem {
-  text: string;
-  description?: string;
-  type: 'command' | 'file' | 'directory' | 'history' | 'suggestion';
-  score: number;
-}
+import * as fs from 'fs';
+import * as path from 'path';
 
-export interface CompletionContext {
-  input: string;
-  cursor: number;
-  session: string;
-  cwd: string;
-  project?: any;
+export interface CompletionResult {
+  completions: string[];
+  commonPrefix: string;
+  fullMatch?: string;
 }
 
 export class SmartCompleter {
-  private history: CommandHistory;
-  private fileCache: Map<string, string[]> = new Map();
-  private lastCacheUpdate: number = 0;
-  private cacheTTL: number = 60000; // 1分钟缓存
+  private commandHistory: string[] = [];
+  private workspacePath: string;
+  
+  // 内置命令列表
+  private builtinCommands = [
+    'help', 'h', 'modes', 'version', 'v', 'status', 'st',
+    'init', 'memory', 'mem', 'agents', 'agent',
+    'paste', 'p', 'attachments', 'att', 'clear', 'c', 'remove', 'rm',
+    'upload', 'up', 'tools', 'config', 'cfg', 'feedback', 'quit', 'q', 'exit',
+    'vim', 'history', 'hist', 'shortcuts', 'keys', 'multiline', 'ml',
+    'bash', 'cd', 'ls', 'pwd', 'cat', 'grep', 'find', 'tree',
+    'sessions', 'sess', 'resume', 'r', 'compact'
+  ];
 
-  constructor() {
-    this.history = new CommandHistory();
+  constructor(workspacePath: string = process.cwd()) {
+    this.workspacePath = workspacePath;
   }
 
-  async complete(line: string): Promise<[string[], string]> {
-    const completions = await this.getCompletions(line);
-    const texts = completions.map(item => item.text);
-    return [texts, line];
-  }
-
-  async getCompletions(input: string, context?: Partial<CompletionContext>): Promise<CompletionItem[]> {
-    const fullContext: CompletionContext = {
-      input,
-      cursor: input.length,
-      session: '',
-      cwd: process.cwd(),
-      ...context
-    };
-
-    const suggestions: CompletionItem[] = [];
-
-    // 命令补全
-    if (input.startsWith('/')) {
-      suggestions.push(...this.getCommandCompletions(input, fullContext));
+  /**
+   * 补全命令
+   */
+  completeCommand(input: string): CompletionResult {
+    const trimmed = input.trim();
+    
+    // 如果以/开头，补全命令
+    if (trimmed.startsWith('/')) {
+      const commandPart = trimmed.slice(1);
+      const matches = this.builtinCommands.filter(cmd => 
+        cmd.startsWith(commandPart.toLowerCase())
+      );
+      
+      return {
+        completions: matches.map(m => `/${m}`),
+        commonPrefix: this.findCommonPrefix(matches),
+        fullMatch: matches.length === 1 ? `/${matches[0]}` : undefined
+      };
     }
 
-    // 文件路径补全
-    if (this.looksLikeFilePath(input)) {
-      suggestions.push(...await this.getFilePathCompletions(input, fullContext));
+    // 如果以@开头，补全Agent名称
+    if (trimmed.startsWith('@')) {
+      return this.completeAgent(trimmed.slice(1));
     }
 
-    // 历史命令补全
-    suggestions.push(...this.getHistoryCompletions(input, fullContext));
-
-    // 智能建议补全
-    if (smartConfig.getWithDefault('behavior.smartSuggestions', true)) {
-      suggestions.push(...this.getSmartSuggestions(input, fullContext));
+    // 如果以$开头，补全工具名称
+    if (trimmed.startsWith('$')) {
+      return this.completeTool(trimmed.slice(1));
     }
 
-    // 排序和去重
-    return this.deduplicateAndSort(suggestions);
+    // 如果以%开头，补全宏名称
+    if (trimmed.startsWith('%')) {
+      return this.completeMacro(trimmed.slice(1));
+    }
+
+    // 否则返回历史补全
+    return this.completeFromHistory(trimmed);
   }
 
-  private getCommandCompletions(input: string, context: CompletionContext): CompletionItem[] {
-    const commands = [
-      { text: '/help', description: '显示帮助信息', type: 'command' as const },
-      { text: '/clear', description: '清空屏幕', type: 'command' as const },
-      { text: '/history', description: '显示命令历史', type: 'command' as const },
-      { text: '/sessions', description: '管理会话', type: 'command' as const },
-      { text: '/new', description: '创建新会话', type: 'command' as const },
-      { text: '/save', description: '保存当前会话', type: 'command' as const },
-      { text: '/load', description: '加载指定会话', type: 'command' as const },
-      { text: '/config', description: '显示配置信息', type: 'command' as const },
-      { text: '/theme', description: '切换主题', type: 'command' as const },
-      { text: '/multiline', description: '切换多行输入模式', type: 'command' as const },
-      { text: '/project', description: '显示项目信息', type: 'command' as const },
-      { text: '/exit', description: '退出程序', type: 'command' as const }
-    ];
-
-    const prefix = input.toLowerCase();
-    return commands
-      .filter(cmd => cmd.text.toLowerCase().startsWith(prefix))
-      .map(cmd => ({
-        ...cmd,
-        score: this.calculateScore(cmd.text, input)
-      }));
-  }
-
-  private async getFilePathCompletions(input: string, context: CompletionContext): Promise<CompletionItem[]> {
+  /**
+   * 补全文件路径
+   */
+  completeFilePath(input: string): CompletionResult {
     try {
-      const fs = await import('fs');
-      const path = await import('path');
+      const trimmed = input.trim();
+      
+      // 处理~
+      let resolvedPath = trimmed.startsWith('~') 
+        ? trimmed.replace('~', process.env.HOME || '')
+        : trimmed;
 
-      // 提取文件路径
-      const pathMatch = input.match(/(?:[\'\"])(.*?)(?:[\'\"])$/) || input.match(/(\\S+)$/);
-      if (!pathMatch) return [];
-
-      const filePath = pathMatch[1];
-      const dirPath = path.dirname(filePath);
-      const filePrefix = path.basename(filePath);
-
-      // 检查缓存
-      const cacheKey = `${context.cwd}:${dirPath}`;
-      let files = this.fileCache.get(cacheKey);
-
-      if (!files || Date.now() - this.lastCacheUpdate > this.cacheTTL) {
-        if (fs.existsSync(dirPath)) {
-          files = fs.readdirSync(dirPath);
-          this.fileCache.set(cacheKey, files);
-          this.lastCacheUpdate = Date.now();
-        }
+      // 处理相对路径
+      if (!path.isAbsolute(resolvedPath)) {
+        resolvedPath = path.resolve(this.workspacePath, resolvedPath);
       }
 
-      if (!files) return [];
+      const dir = path.dirname(resolvedPath);
+      const base = path.basename(resolvedPath);
 
-      const completions: CompletionItem[] = [];
-
-      for (const file of files) {
-        if (file.toLowerCase().startsWith(filePrefix.toLowerCase())) {
-          const fullPath = path.join(dirPath, file);
-          const stats = fs.statSync(fullPath);
-
-          completions.push({
-            text: path.join(dirPath, file),
-            description: stats.isDirectory() ? '目录' : '文件',
-            type: stats.isDirectory() ? 'directory' : 'file',
-            score: this.calculateScore(file, filePrefix) + 0.1
-          });
-        }
+      if (!fs.existsSync(dir)) {
+        return { completions: [], commonPrefix: '' };
       }
 
-      return completions;
+      const files = fs.readdirSync(dir);
+      const matches = files.filter(f => f.startsWith(base));
+
+      const completions = matches.map(f => {
+        const fullPath = path.join(dir, f);
+        const isDir = fs.statSync(fullPath).isDirectory();
+        return isDir ? `${f}/` : f;
+      });
+
+      return {
+        completions,
+        commonPrefix: this.findCommonPrefix(matches),
+        fullMatch: matches.length === 1 ? matches[0] : undefined
+      };
     } catch (error) {
-      return [];
+      return { completions: [], commonPrefix: '' };
     }
   }
 
-  private getHistoryCompletions(input: string, context: CompletionContext): CompletionItem[] {
-    const history = this.history.getDetailedHistory();
-    const lowerInput = input.toLowerCase();
-
-    const matches = history
-      .filter(entry => entry.command.toLowerCase().includes(lowerInput))
-      .slice(-20) // 最近20条匹配
-      .map(entry => ({
-        text: entry.command,
-        description: `历史命令 (${new Date(entry.timestamp).toLocaleDateString()})`,
-        type: 'history' as const,
-        score: this.calculateScore(entry.command, input) - 0.1
-      }));
-
-    return matches;
+  /**
+   * 补全Agent名称
+   */
+  private completeAgent(partial: string): CompletionResult {
+    const agents = this.listAgents();
+    const matches = agents.filter(a => a.startsWith(partial.toLowerCase()));
+    
+    return {
+      completions: matches.map(a => `@${a}`),
+      commonPrefix: this.findCommonPrefix(matches),
+      fullMatch: matches.length === 1 ? `@${matches[0]}` : undefined
+    };
   }
 
-  private getSmartSuggestions(input: string, context: CompletionContext): CompletionItem[] {
-    const suggestions: CompletionItem[] = [];
-    const lowerInput = input.toLowerCase();
-
-    // 编程相关建议
-    if (lowerInput.includes('代码') || lowerInput.includes('code')) {
-      suggestions.push(
-        { text: '分析这段代码的问题', description: '代码分析', type: 'suggestion' as const, score: 0.8 },
-        { text: '优化这个函数的性能', description: '性能优化', type: 'suggestion' as const, score: 0.8 },
-        { text: '解释这个算法的工作原理', description: '算法解释', type: 'suggestion' as const, score: 0.8 },
-        { text: '重构这段代码', description: '代码重构', type: 'suggestion' as const, score: 0.8 }
-      );
+  /**
+   * 列出可用的Agents
+   */
+  private listAgents(): string[] {
+    const agents: string[] = [];
+    
+    // 项目级Agent
+    const projectDir = path.join(this.workspacePath, '.aicli', 'agents');
+    if (fs.existsSync(projectDir)) {
+      const files = fs.readdirSync(projectDir)
+        .filter(f => f.endsWith('.md'))
+        .map(f => f.replace('.md', ''));
+      agents.push(...files);
     }
 
-    // 文件操作建议
-    if (lowerInput.includes('文件') || lowerInput.includes('file')) {
-      suggestions.push(
-        { text: '读取文件内容', description: '文件读取', type: 'suggestion' as const, score: 0.8 },
-        { text: '创建新文件', description: '文件创建', type: 'suggestion' as const, score: 0.8 },
-        { text: '搜索文件中的内容', description: '文件搜索', type: 'suggestion' as const, score: 0.8 },
-        { text: '批量重命名文件', description: '文件重命名', type: 'suggestion' as const, score: 0.8 }
-      );
+    // 用户级Agent
+    const userDir = path.join(process.env.HOME || '', '.aicli', 'agents');
+    if (fs.existsSync(userDir)) {
+      const files = fs.readdirSync(userDir)
+        .filter(f => f.endsWith('.md'))
+        .map(f => f.replace('.md', ''));
+      agents.push(...files);
     }
 
-    // 调试相关建议
-    if (lowerInput.includes('调试') || lowerInput.includes('debug') || lowerInput.includes('错误')) {
-      suggestions.push(
-        { text: '帮我调试这个错误', description: '错误调试', type: 'suggestion' as const, score: 0.8 },
-        { text: '分析这个bug的原因', description: 'Bug分析', type: 'suggestion' as const, score: 0.8 },
-        { text: '如何修复这个问题', description: '问题修复', type: 'suggestion' as const, score: 0.8 }
-      );
+    return [...new Set(agents)];
+  }
+
+  /**
+   * 补全工具名称
+   */
+  private completeTool(partial: string): CompletionResult {
+    const tools = ['grep', 'read', 'write', 'bash', 'glob'];
+    const matches = tools.filter(t => t.startsWith(partial.toLowerCase()));
+    
+    return {
+      completions: matches.map(t => `$${t}`),
+      commonPrefix: this.findCommonPrefix(matches),
+      fullMatch: matches.length === 1 ? `$${matches[0]}` : undefined
+    };
+  }
+
+  /**
+   * 补全宏名称
+   */
+  private completeMacro(partial: string): CompletionResult {
+    const macros = this.listMacros();
+    const matches = macros.filter(m => m.startsWith(partial.toLowerCase()));
+    
+    return {
+      completions: matches.map(m => `%${m}`),
+      commonPrefix: this.findCommonPrefix(matches),
+      fullMatch: matches.length === 1 ? `%${matches[0]}` : undefined
+    };
+  }
+
+  /**
+   * 列出可用的宏
+   */
+  private listMacros(): string[] {
+    const macros: string[] = [];
+    
+    const projectDir = path.join(this.workspacePath, '.aicli', 'macros');
+    if (fs.existsSync(projectDir)) {
+      const files = fs.readdirSync(projectDir)
+        .filter(f => f.endsWith('.md'))
+        .map(f => f.replace('.md', ''));
+      macros.push(...files);
     }
 
-    // 项目相关建议
-    if (context.project) {
-      if (context.project.type === 'nodejs') {
-        suggestions.push(
-          { text: '分析package.json依赖', description: '依赖分析', type: 'suggestion' as const, score: 0.9 },
-          { text: '优化npm脚本', description: '脚本优化', type: 'suggestion' as const, score: 0.9 }
-        );
+    const userDir = path.join(process.env.HOME || '', '.aicli', 'macros');
+    if (fs.existsSync(userDir)) {
+      const files = fs.readdirSync(userDir)
+        .filter(f => f.endsWith('.md'))
+        .map(f => f.replace('.md', ''));
+      macros.push(...files);
+    }
+
+    return [...new Set(macros)];
+  }
+
+  /**
+   * 从历史记录补全
+   */
+  private completeFromHistory(partial: string): CompletionResult {
+    const matches = this.commandHistory.filter(h => 
+      h.toLowerCase().startsWith(partial.toLowerCase())
+    );
+    
+    return {
+      completions: matches,
+      commonPrefix: this.findCommonPrefix(matches),
+      fullMatch: matches.length === 1 ? matches[0] : undefined
+    };
+  }
+
+  /**
+   * 智能建议
+   */
+  getSuggestions(input: string, context?: {
+    hasAttachments?: boolean;
+    hasMemory?: boolean;
+    recentErrors?: string[];
+  }): Array<{ suggestion: string; description: string; priority: number }> {
+    const suggestions: Array<{ suggestion: string; description: string; priority: number }> = [];
+
+    // 如果有附件但没有对话，建议发送消息
+    if (context?.hasAttachments && !input.trim()) {
+      suggestions.push({
+        suggestion: '分析这些文件',
+        description: '让AI分析附件内容',
+        priority: 9
+      });
+    }
+
+    // 如果没有初始化记忆，建议初始化
+    if (!context?.hasMemory && !input.trim()) {
+      suggestions.push({
+        suggestion: '/init',
+        description: '初始化项目记忆',
+        priority: 8
+      });
+    }
+
+    // 如果输入看起来是代码相关，建议使用review Agent
+    if (this.looksLikeCodeQuestion(input)) {
+      suggestions.push({
+        suggestion: '@review',
+        description: '使用代码审查Agent',
+        priority: 7
+      });
+    }
+
+    // 如果输入看起来是设计相关，建议使用design Agent
+    if (this.looksLikeDesignQuestion(input)) {
+      suggestions.push({
+        suggestion: '@design',
+        description: '使用系统设计Agent',
+        priority: 7
+      });
+    }
+
+    // 如果有最近的错误，建议查看帮助
+    if (context?.recentErrors && context.recentErrors.length > 0) {
+      suggestions.push({
+        suggestion: '/help',
+        description: '查看帮助信息',
+        priority: 6
+      });
+    }
+
+    // 按优先级排序
+    return suggestions.sort((a, b) => b.priority - a.priority);
+  }
+
+  /**
+   * 判断是否是代码相关问题
+   */
+  private looksLikeCodeQuestion(input: string): boolean {
+    const keywords = ['代码', 'code', '函数', 'function', '错误', 'error', 'bug', '性能', 'performance'];
+    return keywords.some(k => input.toLowerCase().includes(k));
+  }
+
+  /**
+   * 判断是否是设计相关问题
+   */
+  private looksLikeDesignQuestion(input: string): boolean {
+    const keywords = ['设计', 'design', '架构', 'architecture', '方案', 'solution', '系统', 'system'];
+    return keywords.some(k => input.toLowerCase().includes(k));
+  }
+
+  /**
+   * 找到共同前缀
+   */
+  private findCommonPrefix(strings: string[]): string {
+    if (strings.length === 0) return '';
+    if (strings.length === 1) return strings[0];
+
+    let prefix = strings[0];
+    for (let i = 1; i < strings.length; i++) {
+      while (strings[i].indexOf(prefix) !== 0) {
+        prefix = prefix.slice(0, -1);
+        if (prefix === '') return '';
       }
+    }
+    return prefix;
+  }
 
-      if (context.project.language === 'python') {
-        suggestions.push(
-          { text: '分析requirements.txt', description: '依赖分析', type: 'suggestion' as const, score: 0.9 },
-          { text: '优化Python代码性能', description: '性能优化', type: 'suggestion' as const, score: 0.9 }
-        );
+  /**
+   * 添加到历史记录
+   */
+  addToHistory(command: string): void {
+    if (command.trim()) {
+      this.commandHistory.unshift(command);
+      // 限制历史记录数量
+      if (this.commandHistory.length > 100) {
+        this.commandHistory = this.commandHistory.slice(0, 100);
       }
     }
-
-    // 通用建议
-    if (input.length < 3) {
-      suggestions.push(
-        { text: '你好，我需要帮助', description: '问候', type: 'suggestion' as const, score: 0.7 },
-        { text: '你能帮我做什么', description: '功能咨询', type: 'suggestion' as const, score: 0.7 },
-        { text: '解释这个概念', description: '概念解释', type: 'suggestion' as const, score: 0.7 }
-      );
-    }
-
-    return suggestions.filter(s => s.text.toLowerCase().includes(lowerInput));
   }
 
-  private looksLikeFilePath(input: string): boolean {
-    // 检查是否像文件路径
-    return /['\"](?:.*[\\/])?[^'\"\s]*['\"]?$/.test(input) ||
-           /[\\/][^\\s]*$/.test(input) ||
-           /\\.[a-zA-Z0-9]+$/.test(input);
+  /**
+   * 获取历史记录
+   */
+  getHistory(): string[] {
+    return [...this.commandHistory];
   }
 
-  private calculateScore(text: string, input: string): number {
-    if (!input) return 1.0;
-
-    const lowerText = text.toLowerCase();
-    const lowerInput = input.toLowerCase();
-
-    // 完全匹配
-    if (lowerText === lowerInput) return 1.0;
-
-    // 前缀匹配
-    if (lowerText.startsWith(lowerInput)) return 0.9;
-
-    // 包含匹配
-    if (lowerText.includes(lowerInput)) {
-      const position = lowerText.indexOf(lowerInput);
-      const positionScore = 1.0 - (position / lowerText.length) * 0.3;
-      return positionScore;
-    }
-
-    // 模糊匹配
-    const words = lowerInput.split(/\\s+/);
-    let matchCount = 0;
-    for (const word of words) {
-      if (lowerText.includes(word)) {
-        matchCount++;
-      }
-    }
-
-    if (matchCount > 0) {
-      return (matchCount / words.length) * 0.7;
-    }
-
-    return 0;
-  }
-
-  private deduplicateAndSort(items: CompletionItem[]): CompletionItem[] {
-    // 去重
-    const seen = new Set();
-    const unique = items.filter(item => {
-      const key = item.text;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-
-    // 按分数排序
-    return unique.sort((a, b) => b.score - a.score);
-  }
-
-  // 获取建议（用于REPL显示）
-  getSuggestions(input: string, limit: number = 5): string[] {
-    const completions = this.getCompletionsSync(input);
-    return completions.slice(0, limit).map(item => item.text);
-  }
-
-  // 同步版本（用于性能敏感的场景）
-  private getCompletionsSync(input: string): CompletionItem[] {
-    const suggestions: CompletionItem[] = [];
-
-    // 只提供命令补全和历史补全（同步）
-    if (input.startsWith('/')) {
-      suggestions.push(...this.getCommandCompletions(input, {
-        input,
-        cursor: input.length,
-        session: '',
-        cwd: process.cwd()
-      }));
-    }
-
-    const history = this.history.getDetailedHistory();
-    const lowerInput = input.toLowerCase();
-    const historyMatches = history
-      .filter(entry => entry.command.toLowerCase().includes(lowerInput))
-      .slice(-10)
-      .map(entry => ({
-        text: entry.command,
-        description: `历史命令`,
-        type: 'history' as const,
-        score: this.calculateScore(entry.command, input) - 0.1
-      }));
-
-    suggestions.push(...historyMatches);
-
-    return this.deduplicateAndSort(suggestions);
-  }
-
-  // 清除缓存
-  clearCache(): void {
-    this.fileCache.clear();
-    this.lastCacheUpdate = 0;
-  }
-
-  // 设置缓存TTL
-  setCacheTTL(ttl: number): void {
-    this.cacheTTL = ttl;
+  /**
+   * 清空历史记录
+   */
+  clearHistory(): void {
+    this.commandHistory = [];
   }
 }

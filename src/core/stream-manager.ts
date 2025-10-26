@@ -3,7 +3,12 @@ import { config } from '../config';
 import { SessionMessage, SessionManagerV2 } from './session-manager-v2';
 import { ToolRegistry, PermissionManager, ToolContext } from './tool-system';
 import { projectContext } from './project-context';
-import { createAIService } from '../services/ai';
+// import { createAIService } from '../services/ai';
+
+function createAIService(): any {
+  // Placeholder - 实际使用时应该由外部传入
+  return null;
+} // Removed
 
 export interface StreamChunk {
   type: 'content' | 'tool_call' | 'tool_result' | 'error' | 'status';

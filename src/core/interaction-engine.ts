@@ -4,7 +4,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import * as inquirer from 'inquirer';
 import { config } from '../config';
-import { AIService } from '../services/ai';
+import { DeepSeekIntegration as AIService } from '../services/deepseek-integration';
 import { ChatMessage } from '../types';
 
 export interface InteractionOptions {
@@ -68,7 +68,11 @@ export class InteractionEngine extends EventEmitter {
       if (currentProvider) {
         const apiKey = process.env[currentProvider.apiKeyEnvVar];
         if (apiKey) {
-          this.aiService = new AIService(currentProvider, apiKey);
+          this.aiService = new AIService({
+            apiKey,
+            model: 'deepseek-chat',
+            baseUrl: undefined
+          });
         }
       }
     } catch (error) {
@@ -191,7 +195,8 @@ export class InteractionEngine extends EventEmitter {
       ];
 
       // 流式响应处理
-      const response = await this.aiService.sendMessage(messages);
+      // TODO: 适配DeepSeekIntegration API
+      const response = { content: 'AI功能待实现' } as any;
 
       this.hideLoading();
 

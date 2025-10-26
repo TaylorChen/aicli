@@ -15,6 +15,7 @@
   "scripts": {
     "start": "node dist/modern-cli.js",
     "dev": "ts-node src/modern-cli.ts",
+    "ultimate": "ts-node src/ui/ultimate-cli-interface.ts",
     "build": "tsc",
     "clean": "rm -rf dist/",
     "typecheck": "tsc --noEmit",

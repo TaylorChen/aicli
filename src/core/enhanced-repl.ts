@@ -94,7 +94,10 @@ export class EnhancedREPL {
       prompt: this.buildPrompt(),
       history: this.history.getHistory(),
       historySize: this.config.maxHistory,
-      completer: this.completer.complete.bind(this.completer)
+      completer: (line: string) => {
+        const result = this.completer.completeCommand(line);
+        return [result.completions, line];
+      }
     });
 
     this.setupEventListeners();
@@ -520,10 +523,10 @@ export class EnhancedREPL {
     if (!this.config.smartSuggestions) return;
 
     const currentInput = this.state.inputBuffer;
-    const suggestions = this.completer.getSuggestions(currentInput);
+    const suggestionsResult = this.completer.getSuggestions(currentInput);
 
-    if (suggestions.length > 0) {
-      this.state.suggestions = suggestions;
+    if (suggestionsResult.length > 0) {
+      this.state.suggestions = suggestionsResult.map(s => s.suggestion);
       this.state.selectedSuggestion = 0;
       this.showSuggestions();
     }
