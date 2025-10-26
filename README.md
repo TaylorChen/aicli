@@ -1,471 +1,342 @@
-# AICLI - Enhanced AI Programming Assistant
+# AICLI - 现代化AI命令行助手
 
-![Version](https://img.shields.io/badge/version-2.1.0-blue)
+![Version](https://img.shields.io/badge/version-2.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen)
 
-A powerful, feature-rich AI programming assistant terminal tool with modern interactive experience, supporting advanced file handling, Vim mode, and intelligent AI interactions.
+一个现代化的AI编程助手命令行工具，参考Claude CLI设计理念，提供简洁、高效、直观的交互体验。
 
-## ✨ Key Features
+## ✨ 核心特性
 
-### 🎯 Advanced User Interface
-- **🔄 Streaming AI Responses**: Real-time display with interrupt support
-- **📊 Dynamic Status Bar**: Live model status, token usage, and response metrics
-- **🏗️ Smart Context Awareness**: Automatic project type detection and context building
-- **⚡ High Performance**: Anti-flicker rendering and optimized memory management
-- **🎨 Modern Terminal UI**: Colorful gradients, animations, and intuitive prompts
-- **⌨️ Vim Mode**: Full Vim-style text editing with multiple modes and commands
+### 🎯 简洁设计
+- **渐进式复杂度** - 从最简单到最复杂的使用方式
+- **零配置启动** - 智能检测配置，开箱即用
+- **统一入口** - 单一命令，多种模式
 
-### 🚀 Core Capabilities
-- **🤖 Multi-Provider Support**: DeepSeek, OpenAI, Claude, and other AI providers
-- **📸 Screenshot Integration**: Direct paste and processing of screenshots
-- **🎯 Drag & Drop Support**: Drag files directly into terminal for instant processing
-- **📎 Advanced Attachment System**: Multi-format file management and processing
-- **📝 Session Management**: Persistent conversation history with import/export
-- **🛠️ Built-in File Operations**: Browse, search, and edit files without leaving the terminal
-- **📋 Smart Clipboard Detection**: Automatic recognition of images, files, and text
+### 🚀 强大功能
+- **多AI提供商** - 支持 DeepSeek、OpenAI、Claude 等
+- **文件拖拽** - 直接拖拽文件到终端自动识别
+- **Vim模式** - 完整的Vim编辑体验
+- **会话管理** - 持久化对话历史
+- **流式响应** - 实时显示AI回复
 
-### 🔧 Developer Tools
-- **🔍 Enhanced Search**: File content search with intelligent filtering
-- **📊 Usage Analytics**: Track token usage, response times, and interaction patterns
-- **⚡ Quick Commands**: Slash commands for rapid workflow execution
-- **🔧 Configuration Management**: Smart environment detection and setup
-- **🎛️ Permission System**: Granular control over AI tool access and execution
+### ⚡ 极致性能
+- **快速启动** - < 1秒冷启动
+- **低内存占用** - < 100MB运行内存
+- **智能缓存** - 按需加载模块
 
-## 🚀 Quick Start
+## 🚀 快速开始
 
-### Installation
+### 安装
 
 ```bash
-# Install globally
+# 全局安装
 npm install -g aicli
 
-# Or install locally
+# 或本地安装
 npm install aicli
 ```
 
-### Configuration
+### 配置
 
-Set up your API keys as environment variables:
+设置API密钥（选择一个）：
 
 ```bash
-# DeepSeek (Primary)
-export DEEPSEEK_API_KEY=your_deepseek_api_key
+# DeepSeek（推荐）
+export DEEPSEEK_API_KEY=your_api_key
 
 # OpenAI
-export OPENAI_API_KEY=your_openai_api_key
+export OPENAI_API_KEY=your_api_key
 
-# Claude (Anthropic)
-export CLAUDE_API_KEY=your_claude_api_key
+# Claude
+export CLAUDE_API_KEY=your_api_key
 ```
 
-### Basic Usage
+### 使用
 
 ```bash
-# Start the interactive interface
+# 渐进式使用方式
+
+# Level 1: 最简单 - 直接提问
+aicli "hello, explain quantum computing"
+
+# Level 2: 打印模式
+aicli -p "analyze this code"
+
+# Level 3: 交互模式
 aicli
 
-# Or use npm if installed locally
-npm start
-
-# Specify provider and model
-aicli --provider deepseek --model deepseek-chat
-
-# Use in print mode for quick queries
-aicli --print "Explain this React component"
+# Level 4: 会话管理
+aicli -c "继续我们的讨论"
+aicli -r session-123 "恢复这个会话"
 ```
 
-## 📖 Detailed Usage Guide
+## 📖 主要命令
 
-### Interactive Interface
-
-Once started, you'll see a modern terminal interface with:
-
-```
-🚀 AICLI - Enhanced AI Programming Assistant
-🤖 deepseek-chat (deepseek)
-
-💬 Start conversation, or type /help for commands
-
-📝 session-id │ 🤖 model-name
-❯
-```
-
-### Slash Commands
-
-#### Essential Commands
-| Command | Description |
-|---------|-------------|
-| `/help` or `/h` | Display comprehensive help |
-| `/paste` or `/p` | Paste clipboard content (images, files, text) |
-| `/attachments` or `/att` | View current attachment list |
-| `/clear` or `/c` | Clear all attachments |
-| `/remove <n>` or `/rm <n>` | Remove specific attachment by number |
-| `/upload [path]` or `/up [path]` | Upload file or view upload status |
-| `/status` or `/st` | Display current system status |
-| `/vim` | Toggle Vim editing mode |
-| `/quit` or `/q` | Exit the program |
-
-#### File Operations
-| Command | Description |
-|---------|-------------|
-| `/ls` or `/list` | List files in current directory |
-| `/cat <file>` or `/read <file>` | View file contents |
-| `/tree` or `/files` | Display project file tree |
-| `/search <pattern>` or `/find <pattern>` | Search file contents |
-
-#### Session Management
-| Command | Description |
-|---------|-------------|
-| `/history` or `/hist` | View command history |
-| `/clear-history` | Clear command history |
-| `/multiline` or `/ml` | Toggle multiline input mode |
-| `/shortcuts` or `/keys` | Show keyboard shortcuts |
-
-### Vim Mode
-
-AICLI includes a full-featured Vim mode for efficient text editing:
+### 基本用法
 
 ```bash
-# Enter Vim mode
-/vim
+aicli [选项] [查询]
 
-# Vim Mode Commands:
-# Normal Mode:
-h/j/k/l         - Move cursor left/down/up/right
-w/b             - Move to next/previous word
-i/I/a/A         - Enter insert mode (at cursor/start/after cursor/end)
-x/X             - Delete character under/before cursor
-dd              - Delete entire line
-yy              - Copy/yank entire line
-p/P             - Paste after/before cursor
-Esc             - Return to normal mode
-:q              - Exit Vim mode
-Ctrl+C          - Force exit Vim mode
+选项:
+  -p, --print              打印模式（非交互）
+  -c, --continue           继续最近的对话
+  -r, --resume <id>        恢复特定会话
+  -m, --model <name>       指定模型
+  --provider <name>        指定AI提供商
+  -k, --api-key <key>      指定API密钥
+  --verbose                详细输出
+  -h, --help               显示帮助
 ```
 
-### File Handling
+### 交互模式命令
 
-#### Screenshot & Image Support
+进入交互模式后可使用：
+
 ```bash
-# Take a screenshot, then:
-/paste
-
-# Or drag an image file into terminal
-# The system will automatically detect and process it
+/help                      显示帮助
+/paste                     粘贴剪贴板
+/att                       查看附件
+/clear                     清空附件
+/vim                       进入Vim模式
+/status                    系统状态
+/quit                      退出
 ```
 
-#### File Upload
+### 文件操作
+
 ```bash
-# Upload specific file
-/upload /path/to/your/file.js
+# 直接拖拽文件到终端
+# 支持: PDF, 图片, 代码, 文档等所有文件类型
 
-# Upload multiple files
-/upload /path/to/directory/
+# 查看附件
+/att
 
-# Drag and drop files into terminal window
-# They'll be automatically added to attachments
-```
+# 删除附件
+/rm 1
 
-#### Attachment Management
-```bash
-# View all attachments
-/attachments
-
-# Remove specific attachment
-/remove 2
-
-# Clear all attachments
+# 清空附件
 /clear
 ```
 
-### Advanced Features
+## 🎯 使用场景
 
-#### Print Mode (Non-Interactive)
+### 代码开发
+
 ```bash
-# Direct query
-aicli --print "Explain this TypeScript code"
+# 分析代码
+cat app.js | aicli -p "find bugs in this code"
 
-# JSON output
-aicli --print --output-format json "Analyze this error"
+# 生成代码
+aicli "create a React component for user profile"
 
-# Pipeline input
-cat logs.txt | aicli --print "Analyze these logs"
-
-# Read from file
-aicli --print < input.txt
+# 重构代码
+aicli -p "refactor this function to be more efficient" < old-code.js
 ```
 
-#### Session Persistence
+### 文档处理
+
 ```bash
-# Continue last conversation
-aicli --continue
+# 分析PDF
+# 拖拽PDF文件到终端
+aicli "summarize this document"
 
-# Resume specific session
-aicli --resume session-id
-
-# View all sessions
-aicli --sessions
+# 生成文档
+aicli "write API documentation for this code" < api.ts
 ```
 
-#### Configuration Options
+### 学习研究
+
 ```bash
-# Set provider and model
-aicli --provider openai --model gpt-4
-
-# Custom API key
-aicli --api-key "your-api-key"
-
-# File limits
-aicli --max-files 10 --max-file-size 20
-
-# Enable/disable streaming
-aicli --streaming
-aicli --no-streaming
-
-# Verbose output
-aicli --verbose
+# 交互式学习
+aicli
+> 解释什么是量子计算
+> 给我一些实际应用例子
+> 推荐相关学习资源
 ```
 
-## 🎯 Use Cases
+## 📁 项目结构
 
-### Code Development
-```bash
-# Analyze code structure
-aicli --print "Explain the architecture of this React component" < component.jsx
-
-# Debug issues
-aicli --print "Why is this TypeScript error occurring?" < error.log
-
-# Refactor code
-aicli --print "Refactor this function to be more efficient" < old-code.js
+```
+aicli/
+├── bin/
+│   └── aicli                    # 启动脚本
+├── src/
+│   ├── modern-cli.ts            # 主入口
+│   ├── config/                  # 配置管理
+│   ├── core/                    # 核心功能
+│   │   ├── enhanced-vim-mode.ts
+│   │   ├── error-handler.ts
+│   │   ├── zero-config.ts
+│   │   └── ...
+│   ├── services/                # AI服务
+│   │   ├── deepseek-integration.ts
+│   │   └── enhanced-ai-service.ts
+│   ├── ui/                      # 用户界面
+│   │   ├── enhanced-cli-interface.ts
+│   │   └── minimal-cli-interface.ts
+│   └── sdk/                     # SDK接口
+├── docs/                        # 文档
+│   ├── guides/                  # 使用指南
+│   └── design/                  # 设计文档
+└── README.md
 ```
 
-### Documentation
-```bash
-# Generate documentation
-aicli --print "Generate API documentation for this code" < api.js
+## ⚙️ 配置选项
 
-# Explain code
-aicli --print "Explain what this algorithm does" < algorithm.py
+### 环境变量
+
+```bash
+DEEPSEEK_API_KEY               DeepSeek API密钥
+OPENAI_API_KEY                 OpenAI API密钥
+CLAUDE_API_KEY                 Claude API密钥
 ```
 
-### Learning
-```bash
-# Ask questions
-aicli "What's the difference between let and const in JavaScript?"
+### 配置文件
 
-# Get examples
-aicli "Show me examples of React hooks usage"
-```
-
-## 📁 Supported File Types
-
-### Documents
-- **PDF**, **DOC**, **DOCX**, **TXT**, **MD**, **RTF**
-
-### Images
-- **PNG**, **JPG**, **JPEG**, **GIF**, **WebP**, **BMP**, **SVG**
-
-### Code
-- **JavaScript**, **TypeScript**, **Python**, **Java**, **C++**
-- **Go**, **Rust**, **PHP**, **Ruby**, **Swift**, **Kotlin**
-- **HTML**, **CSS**, **Vue**, **React**, **Angular**
-- **JSON**, **XML**, **YAML**, **TOML**, **INI**
-
-### All Formats
-- Support for **any file type** with intelligent content detection
-- Automatic text extraction and processing
-- Binary file handling for appropriate formats
-
-## ⌨️ Keyboard Shortcuts
-
-### Global Shortcuts
-- `Ctrl+C` - Interrupt AI response / Exit program
-- `Ctrl+L` - Clear screen
-- `Ctrl+V` - Paste clipboard content
-- `↑/↓` - Navigate command history
-- `Tab` - Command auto-completion
-
-### Vim Mode Shortcuts
-- `Esc` - Return to normal mode
-- `:q` - Exit Vim mode
-- `Ctrl+C` - Force exit Vim mode
-- All standard Vim keybindings supported
-
-## 🔧 Configuration
-
-### Environment Variables
-```bash
-# AI Provider API Keys
-export DEEPSEEK_API_KEY=your_deepseek_key
-export OPENAI_API_KEY=your_openai_key
-export CLAUDE_API_KEY=your_claude_key
-
-# Optional Configuration
-export AICLI_CONFIG_DIR=~/.config/aicli
-export AICLI_LOG_LEVEL=info
-export AICLI_MAX_TOKENS=4000
-```
-
-### Configuration File
-Create `~/.config/aicli/config.json`:
+创建 `~/.config/aicli/config.json`:
 
 ```json
 {
-  "currentProvider": "deepseek",
-  "currentModel": "deepseek-chat",
-  "theme": "dark",
-  "autoSave": true,
-  "sessionHistory": 100,
+  "provider": "deepseek",
+  "model": "deepseek-chat",
   "maxFiles": 20,
-  "maxFileSize": 52428800,
-  "enableStreaming": true,
-  "autoClearAttachments": true,
-  "verbose": false
+  "maxFileSize": 52428800
 }
 ```
 
-## 🛠️ Development
+## 🔧 开发
 
-### Requirements
-- **Node.js** >= 16.0.0
-- **npm** >= 7.0.0
+### 本地开发
 
-### Development Setup
 ```bash
-# Clone repository
+# 克隆项目
 git clone https://github.com/your-repo/aicli.git
 cd aicli
 
-# Install dependencies
+# 安装依赖
 npm install
 
-# Start development mode
+# 开发模式
 npm run dev
 
-# Build for production
+# 编译
 npm run build
 
-# Run tests
-npm test
-
-# Lint code
-npm run lint
-
-# Type checking
-npm run typecheck
+# 运行
+npm start
 ```
 
-### Project Structure
-```
-src/
-├── ui/                 # User interface components
-│   ├── enhanced-cli-interface.ts
-│   └── modern-cli-interface.ts
-├── core/               # Core functionality
-│   ├── ai-service.ts
-│   ├── file-processor.ts
-│   ├── session-manager.ts
-│   └── vim-mode.ts
-├── services/           # External service integrations
-├── tools/              # Built-in tools and utilities
-├── config/             # Configuration management
-└── types/              # TypeScript type definitions
-```
+### 脚本说明
 
-## 📦 Publishing
-
-### Build and Publish
 ```bash
-# Build the project
-npm run build
-
-# Publish to npm
-npm publish
-
-# Create distribution package
-npm pack
+npm start          # 运行编译后的版本
+npm run dev        # 开发模式（ts-node）
+npm run build      # 编译TypeScript
+npm run clean      # 清理编译文件
+npm run typecheck  # 类型检查
+npm run lint       # 代码检查
+npm test           # 运行测试
 ```
 
-### Installation Options
+## 📚 文档
+
+- **[使用指南](docs/guides/)** - 详细的使用说明
+- **[设计文档](docs/design/)** - 架构和设计理念
+- **[更新日志](CHANGELOG.md)** - 版本更新记录
+- **[优化总结](OPTIMIZATION_SUMMARY.md)** - 性能优化详情
+
+## 🎯 特色功能
+
+### 1. 文件拖拽
+
+直接拖拽任何文件到终端：
+
+```
+❯ /Users/name/document.pdf
+
+✓ 文件已添加: document.pdf
+  类型: application/pdf
+  大小: 1.5 MB
+
+❯ 请分析这份文档
+```
+
+### 2. Vim模式
+
+完整的Vim编辑体验：
+
 ```bash
-# Install from npm registry
-npm install -g aicli
+/vim                    # 进入Vim模式
 
-# Install from local file
-npm install -g ./aicli-2.1.0.tgz
+# Normal模式
+h/j/k/l                # 移动
+dd                     # 删除行
+yy                     # 复制行
 
-# Install from GitHub
-npm install -g github:your-repo/aicli
+# Command模式
+:q                     # 退出
+:w                     # 保存
+:wq                    # 保存并退出
 ```
 
-## 🤝 Contributing
+### 3. 零配置
 
-We welcome contributions! Please follow our contribution guidelines:
+智能检测配置，自动使用可用的AI服务：
 
-1. **Fork** the repository
-2. **Create** a feature branch: `git checkout -b feature/amazing-feature`
-3. **Commit** your changes: `git commit -m 'Add amazing feature'`
-4. **Push** to the branch: `git push origin feature/amazing-feature`
-5. **Open** a Pull Request
+```bash
+# 只需设置一个API密钥即可开始
+export DEEPSEEK_API_KEY=your_key
+aicli "test"
+```
 
-### Code Style
-- Use **TypeScript** for new features
-- Follow **ESLint** configuration
-- Add **JSDoc** comments for public APIs
-- Include **tests** for new functionality
-- Update **documentation** as needed
+## 🔄 版本历史
 
-## 📄 License
+### v2.2.0 (当前)
+- ✅ 统一项目入口
+- ✅ 清理无用代码
+- ✅ 优化启动性能
+- ✅ 完善文件拖拽
+- ✅ 增强Vim支持
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### v2.1.0
+- ✅ Vim模式完整实现
+- ✅ 性能优化
+- ✅ 错误处理改进
 
-## 🙏 Acknowledgments
+### v2.0.0
+- ✅ 现代化界面重构
+- ✅ 流式响应支持
+- ✅ 文件处理增强
 
-- All open-source contributors
-- Terminal UI design inspirations from various CLI tools
-- AI technology providers (DeepSeek, OpenAI, Anthropic)
-- The Node.js and TypeScript communities
+## 🤝 贡献
 
-## 📞 Support
+欢迎贡献代码！请遵循以下步骤：
 
-- **GitHub Issues**: https://github.com/your-repo/aicli/issues
-- **Documentation**: https://docs.aicli.dev
-- **Discord Community**: [Link to Discord server]
-- **Email Support**: support@aicli.dev
+1. Fork 项目
+2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 开启 Pull Request
 
-## 🎉 Release Notes
+## 📄 许可证
 
-### v2.1.0 - Vim Mode & Performance Enhancements
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
 
-#### ✨ New Features
-- **⌨️ Vim Mode**: Full Vim-style text editing with normal, insert, visual, and command modes
-- **🎯 Enhanced Performance**: Anti-flicker rendering and optimized memory usage
-- **🔧 Improved Error Handling**: Better error messages and recovery mechanisms
-- **📋 Enhanced Attachment System**: Improved file handling and drag-drop support
+## 🙏 致谢
 
-#### 🔧 Improvements
-- **🎨 UI Polish**: Refined colors, animations, and visual feedback
-- **📝 Better Documentation**: Comprehensive help system and usage guides
-- **🚀 Faster Startup**: Optimized initialization and configuration loading
-- **🔍 Enhanced Search**: Improved file content search with better filtering
+- Claude CLI - 设计灵感
+- DeepSeek - AI服务支持
+- 开源社区 - 技术支持
 
-#### 🐛 Bug Fixes
-- Fixed Vim mode Enter key handling
-- Resolved attachment clearing issues
-- Improved streaming response stability
-- Fixed drag-drop detection in certain terminals
+## 📞 支持
 
-### v2.0.0 - Modern Interface Revamp
-- Complete UI redesign with modern aesthetics
-- Streaming AI responses with interrupt support
-- Advanced file handling and screenshot integration
-- Enhanced session management and persistence
-- Comprehensive slash command system
+- **GitHub Issues**: [提交问题](https://github.com/your-repo/aicli/issues)
+- **文档**: [在线文档](docs/)
+- **社区**: [讨论区](https://github.com/your-repo/aicli/discussions)
 
 ---
 
-**🚀 Experience the future of AI-assisted programming in your terminal!**
+**享受现代化的AI CLI体验！** 🚀
 
-*Built with ❤️ by the AICLI team*
+*Built with ❤️ using TypeScript*

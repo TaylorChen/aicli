@@ -1,6 +1,6 @@
 {
   "name": "aicli",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "一个类似 Claude CLI 的 AI 编程助手终端工具，支持截图粘贴功能",
   "main": "dist/enhanced-index.js",
   "bin": {
@@ -13,22 +13,14 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
-    "prepublishOnly": "npm run build",
-    "dev": "ts-node src/modern-cli.ts",
     "start": "node dist/modern-cli.js",
-    "legacy": "node dist/enhanced-index.js",
-    "claude": "ts-node src/index-enhanced.ts claude",
-    "dev:claude": "ts-node src/index-enhanced.ts claude",
-    "modern": "ts-node src/modern-cli.ts",
-    "dev:modern": "ts-node src/modern-cli.ts",
-    "minimal": "ts-node src/ui/minimal-cli-interface.ts",
-    "enhanced": "ts-node src/enhanced-index.ts",
-    "dev:enhanced": "ts-node src/enhanced-index.ts",
-    "test": "jest",
-    "lint": "eslint src --ext .ts",
-    "typecheck": "tsc --noEmit",
+    "dev": "ts-node src/modern-cli.ts",
+    "build": "tsc",
     "clean": "rm -rf dist/",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "test": "jest",
+    "prepublishOnly": "npm run build",
     "prepare": "npm run build"
   },
   "keywords": [
