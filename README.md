@@ -1231,7 +1231,6 @@ MIT License - 详见 [LICENSE](./LICENSE) 文件
 ## 📞 联系方式
 
 - GitHub: [@TaylorChen](https://github.com/TaylorChen)
-- Email: your.email@example.com
 - Issues: [GitHub Issues](https://github.com/TaylorChen/aicli/issues)
 
 ---
